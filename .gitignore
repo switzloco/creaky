@@ -6,6 +6,7 @@ kaggle.json
 # Data & Weights - too large for git
 data/
 checkpoints/
+submission.csv
 *.pt
 *.pth
 *.onnx
@@ -13,6 +14,7 @@ checkpoints/
 *.dicom
 *.npy
 *.parquet
+
 
 
 # Python
