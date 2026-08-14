@@ -3,12 +3,17 @@ KaggleAPIKEY.txt
 kaggle.json
 .kaggle/
 
-# Data - too large for git
+# Data & Weights - too large for git
 data/
+checkpoints/
+*.pt
+*.pth
+*.onnx
 *.dcm
 *.dicom
 *.npy
 *.parquet
+
 
 # Python
 __pycache__/
