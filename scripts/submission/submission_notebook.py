@@ -47,21 +47,42 @@ DEFAULT_PRIORS = {
 
 def get_data_paths() -> Tuple[str, str, str, str]:
     """Auto-detect competition paths between Kaggle environment and Local development."""
-    kaggle_root = "/kaggle/input/rsna-knee-abnormality-detection"
-    if os.path.exists(kaggle_root):
+    possible_roots = [
+        "/kaggle/input/rsna-knee-abnormality-detection",
+        "/kaggle/input/rsna-2026-knee-abnormality-detection",
+    ]
+    kaggle_root = None
+    for r in possible_roots:
+        if os.path.exists(r):
+            kaggle_root = r
+            break
+
+    # If Kaggle directory has a custom name, dynamically find the folder containing test.csv
+    if kaggle_root is None and os.path.exists("/kaggle/input"):
+        try:
+            for d in os.listdir("/kaggle/input"):
+                candidate = os.path.join("/kaggle/input", d)
+                if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "test.csv")):
+                    kaggle_root = candidate
+                    break
+        except Exception:
+            pass
+
+    if kaggle_root is not None:
         test_csv = os.path.join(kaggle_root, "test.csv")
         test_series_csv = os.path.join(kaggle_root, "test_series.csv")
         test_series_dir = os.path.join(kaggle_root, "test_series")
         models_dir = "/kaggle/input/creaky-models"
     else:
-        # Local workspace paths
-        local_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw"))
+        # Local workspace paths (safe in notebooks without __file__)
+        local_root = os.path.abspath("data/raw")
         test_csv = os.path.join(local_root, "test.csv")
         test_series_csv = os.path.join(local_root, "test_series.csv")
-        test_series_dir = os.path.join(local_root, "sample_dicom")  # Fallback to local sample dicoms
-        models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "checkpoints"))
+        test_series_dir = os.path.join(local_root, "sample_dicom")
+        models_dir = os.path.abspath("checkpoints")
 
     return test_csv, test_series_csv, test_series_dir, models_dir
+
 
 
 # ==============================================================================
