@@ -45,43 +45,65 @@ DEFAULT_PRIORS = {
 }
 
 
-def get_data_paths() -> Tuple[str, str, str, str]:
-    """Auto-detect competition paths between Kaggle environment and Local development."""
-    possible_roots = [
-        "/kaggle/input/rsna-knee-abnormality-detection",
-        "/kaggle/input/rsna-2026-knee-abnormality-detection",
-    ]
-    kaggle_root = None
-    for r in possible_roots:
-        if os.path.exists(r):
-            kaggle_root = r
-            break
+def get_data_paths() -> Tuple[str, str, str, List[str]]:
+    """Auto-detect competition paths and model checkpoints across Kaggle and Local environments."""
+    test_csv = None
+    test_series_csv = None
+    test_series_dir = None
+    ckpt_files = []
 
-    # If Kaggle directory has a custom name, dynamically find the folder containing test.csv
-    if kaggle_root is None and os.path.exists("/kaggle/input"):
-        try:
-            for d in os.listdir("/kaggle/input"):
-                candidate = os.path.join("/kaggle/input", d)
-                if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "test.csv")):
-                    kaggle_root = candidate
+    # 1. Check if running inside Kaggle environment
+    if os.path.exists("/kaggle/input"):
+        print("Scanning /kaggle/input for competition datasets and model checkpoints...")
+        for root, dirs, files in os.walk("/kaggle/input"):
+            # Check for test.csv
+            if "test.csv" in files and test_csv is None:
+                test_csv = os.path.join(root, "test.csv")
+                print(f"  --> Found test.csv at: {test_csv}")
+                
+                # Check for test_series.csv in same folder
+                if "test_series.csv" in files:
+                    test_series_csv = os.path.join(root, "test_series.csv")
+                    print(f"  --> Found test_series.csv at: {test_series_csv}")
+
+                # Check for test_series / test_dicom directory
+                for cand in ["test_series", "test_dicom", "test", "test_images"]:
+                    cand_path = os.path.join(root, cand)
+                    if os.path.isdir(cand_path):
+                        test_series_dir = cand_path
+                        print(f"  --> Found test series directory at: {test_series_dir}")
+                        break
+
+            # Search for any .pt or .pth model checkpoints
+            for f in files:
+                if f.endswith(".pt") or f.endswith(".pth"):
+                    ckpt_path = os.path.join(root, f)
+                    ckpt_files.append(ckpt_path)
+                    print(f"  --> Found model checkpoint at: {ckpt_path}")
+
+        # Fallback search for test_series.csv if not in same folder as test.csv
+        if test_csv is not None and test_series_csv is None:
+            for root, dirs, files in os.walk("/kaggle/input"):
+                if "test_series.csv" in files:
+                    test_series_csv = os.path.join(root, "test_series.csv")
                     break
-        except Exception:
-            pass
 
-    if kaggle_root is not None:
-        test_csv = os.path.join(kaggle_root, "test.csv")
-        test_series_csv = os.path.join(kaggle_root, "test_series.csv")
-        test_series_dir = os.path.join(kaggle_root, "test_series")
-        models_dir = "/kaggle/input/creaky-models"
-    else:
-        # Local workspace paths (safe in notebooks without __file__)
+        if test_series_dir is None and test_csv is not None:
+            test_series_dir = os.path.join(os.path.dirname(test_csv), "test_series")
+
+    # 2. Local workspace fallback
+    if test_csv is None or not os.path.exists(test_csv):
         local_root = os.path.abspath("data/raw")
         test_csv = os.path.join(local_root, "test.csv")
         test_series_csv = os.path.join(local_root, "test_series.csv")
         test_series_dir = os.path.join(local_root, "sample_dicom")
-        models_dir = os.path.abspath("checkpoints")
+        local_checkpoints = os.path.abspath("checkpoints")
+        if os.path.exists(local_checkpoints):
+            for f in os.listdir(local_checkpoints):
+                if f.endswith(".pt") or f.endswith(".pth"):
+                    ckpt_files.append(os.path.join(local_checkpoints, f))
 
-    return test_csv, test_series_csv, test_series_dir, models_dir
+    return test_csv, test_series_csv, test_series_dir, ckpt_files
 
 
 
@@ -293,15 +315,19 @@ class KneeAbnormalityClassifier(nn.Module):
 
 def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFrame:
     """Run full inference loop and generate submission.csv."""
-    test_csv, test_series_csv, test_series_dir, models_dir = get_data_paths()
+    test_csv, test_series_csv, test_series_dir, ckpt_files = get_data_paths()
 
     print(f"Reading test data from: {test_csv}")
-    if not os.path.exists(test_csv):
-        print("Error: test.csv not found!")
+    if test_csv is None or not os.path.exists(test_csv):
+        print("Error: test.csv not found anywhere in /kaggle/input or local paths!")
+        if os.path.exists("/kaggle/input"):
+            print("Contents of /kaggle/input:")
+            for root, dirs, files in os.walk("/kaggle/input"):
+                print(f"  {root}: {files}")
         sys.exit(1)
 
     test_df = pd.read_csv(test_csv)
-    test_series_df = pd.read_csv(test_series_csv) if os.path.exists(test_series_csv) else pd.DataFrame()
+    test_series_df = pd.read_csv(test_series_csv) if (test_series_csv and os.path.exists(test_series_csv)) else pd.DataFrame()
 
     print(f"Loaded {len(test_df)} test studies.")
 
@@ -310,7 +336,6 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
     print(f"Inference Device: {device}")
 
     # Check for model checkpoints
-    ckpt_files = glob.glob(os.path.join(models_dir, "*.pt"))
     models = []
     if ckpt_files:
         print(f"Found {len(ckpt_files)} model checkpoints. Loading ensemble...")
