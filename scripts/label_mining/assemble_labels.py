@@ -105,7 +105,12 @@ def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="Assemble train_labels.csv")
     parser.add_argument("--train_csv", default="data/raw/train.csv")
     parser.add_argument("--out_csv", default="data/processed/train_labels.csv")

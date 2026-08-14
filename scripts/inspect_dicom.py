@@ -4,7 +4,12 @@ import sys
 import pydicom
 import numpy as np
 
-sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 
 sample_dir = "data/raw/sample_dicom"
 files = [f for f in os.listdir(sample_dir) if f.endswith(".dcm")]

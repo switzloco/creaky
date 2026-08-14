@@ -89,7 +89,12 @@ def evaluate_labels(pred_df: pd.DataFrame, true_df: pd.DataFrame) -> dict:
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 
     train_path = "data/raw/train.csv"
     train_df = pd.read_csv(train_path)

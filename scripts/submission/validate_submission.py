@@ -78,7 +78,12 @@ def validate_submission_file(sub_csv_path: str, test_csv_path: str, sample_sub_p
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     sub_file = "submission.csv" if len(sys.argv) < 2 else sys.argv[1]
     test_file = "data/raw/test.csv"
     sample_sub = "data/raw/sample_submission.csv"

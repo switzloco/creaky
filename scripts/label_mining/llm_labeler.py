@@ -104,5 +104,10 @@ class LLMLabeler:
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     print("LLM Labeler module ready. Set GEMINI_API_KEY to run full LLM extraction pipeline.")

@@ -9,7 +9,12 @@ sys.path.insert(0, current_dir)
 
 from regex_labeler import RegexLabeler, TARGET_COLS
 
-sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 
 train_df = pd.read_csv("data/raw/train.csv")
 gold_df = train_df.dropna(subset=["ACL"]).copy()

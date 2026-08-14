@@ -369,5 +369,10 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
 
 if __name__ == "__main__":
     import sys
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     run_submission_inference("submission.csv")
+

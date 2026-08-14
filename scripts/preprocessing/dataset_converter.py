@@ -125,8 +125,12 @@ def convert_dataset_directory(
 
 
 if __name__ == "__main__":
-    import sys
-    sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     sample_dir = "data/raw/sample_dicom"
     out_dir = "data/processed/sample_processed"
     if os.path.exists(sample_dir):
