@@ -143,9 +143,23 @@ def get_data_paths() -> Tuple[str, str, str, List[str]]:
                         print(f"  --> Using train_series.csv for metadata: {test_series_csv}")
                     break
 
-        # Scan for model checkpoints (only top-level /kaggle/input dirs, no deep walk)
+        # Scan for model checkpoints
+        # 1. Kaggle Models mount deeply: /kaggle/input/models/<user>/<name>/<fw>/<var>/<ver>/*.pt
+        #    Safe to os.walk because /kaggle/input/models/ only contains model artifacts, not DICOMs.
+        kaggle_models_dir = "/kaggle/input/models"
+        if os.path.isdir(kaggle_models_dir):
+            for dirpath, _, filenames in os.walk(kaggle_models_dir):
+                for f in filenames:
+                    if f.endswith(".pt") or f.endswith(".pth"):
+                        ckpt_path = os.path.join(dirpath, f)
+                        ckpt_files.append(ckpt_path)
+                        print(f"  --> Found model checkpoint at: {ckpt_path}")
+
+        # 2. Dataset-style attachments: scan 2 levels under /kaggle/input/<dataset>/
         try:
             for entry in os.listdir("/kaggle/input"):
+                if entry == "models" or entry == "competitions":
+                    continue  # already handled above / not checkpoints
                 entry_path = os.path.join("/kaggle/input", entry)
                 if os.path.isdir(entry_path):
                     for f in os.listdir(entry_path):
@@ -153,7 +167,6 @@ def get_data_paths() -> Tuple[str, str, str, List[str]]:
                             ckpt_path = os.path.join(entry_path, f)
                             ckpt_files.append(ckpt_path)
                             print(f"  --> Found model checkpoint at: {ckpt_path}")
-                    # Also check one level deeper for checkpoints
                     for sub in os.listdir(entry_path):
                         sub_path = os.path.join(entry_path, sub)
                         if os.path.isdir(sub_path):
