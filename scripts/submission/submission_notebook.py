@@ -143,6 +143,21 @@ def get_data_paths() -> Tuple[str, str, str, List[str]]:
                         print(f"  --> Using train_series.csv for metadata: {test_series_csv}")
                     break
 
+        # Debug: show what's actually mounted under /kaggle/input/
+        print("  [DEBUG] Contents of /kaggle/input/:")
+        try:
+            for entry in sorted(os.listdir("/kaggle/input")):
+                entry_path = os.path.join("/kaggle/input", entry)
+                marker = "dir" if os.path.isdir(entry_path) else "file"
+                print(f"    {marker}: {entry}")
+                if os.path.isdir(entry_path):
+                    for sub in sorted(os.listdir(entry_path))[:10]:
+                        sub_path = os.path.join(entry_path, sub)
+                        marker2 = "dir" if os.path.isdir(sub_path) else "file"
+                        print(f"      {marker2}: {sub}")
+        except OSError as e:
+            print(f"    Error listing: {e}")
+
         # Scan for model checkpoints
         # 1. Kaggle Models mount deeply: /kaggle/input/models/<user>/<name>/<fw>/<var>/<ver>/*.pt
         #    Safe to os.walk because /kaggle/input/models/ only contains model artifacts, not DICOMs.
