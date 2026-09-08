@@ -56,42 +56,50 @@ CONFIG = {
 
 def get_train_paths() -> Tuple[str, str, str]:
     """Locate train.csv, train_series.csv, and train_series directory."""
-    COMP_SLUG = "rsna-knee-abnormality-detection"
-    candidate_roots = [
-        f"/kaggle/input/competitions/{COMP_SLUG}",
-        f"/kaggle/input/{COMP_SLUG}",
-        os.path.abspath("data/raw")
-    ]
-    if os.path.exists("/kaggle/input"):
-        try:
-            for entry in os.listdir("/kaggle/input"):
-                p = os.path.join("/kaggle/input", entry)
-                if os.path.isdir(p) and p not in candidate_roots:
-                    candidate_roots.append(p)
-        except OSError:
-            pass
-
     train_csv, series_csv, series_dir = None, None, None
 
-    for root in candidate_roots:
-        if not os.path.isdir(root):
-            continue
-        tc = os.path.join(root, "train.csv")
-        if os.path.isfile(tc):
-            train_csv = tc
-            sc = os.path.join(root, "train_series.csv")
-            if os.path.isfile(sc):
-                series_csv = sc
-            for cand in ["train_series", "train_images", "train"]:
-                sd = os.path.join(root, cand)
-                if os.path.isdir(sd):
-                    series_dir = sd
-                    break
-            break
+    # 1. Search Kaggle input
+    if os.path.exists("/kaggle/input"):
+        print("Scanning /kaggle/input for competition data...")
+        try:
+            for entry in sorted(os.listdir("/kaggle/input")):
+                print(f"  /kaggle/input/{entry}")
+                ep = os.path.join("/kaggle/input", entry)
+                if os.path.isdir(ep):
+                    for sub in sorted(os.listdir(ep))[:10]:
+                        print(f"    {entry}/{sub}")
+        except OSError as e:
+            print(f"  Error reading /kaggle/input: {e}")
 
-    print(f"Train CSV: {train_csv}")
-    print(f"Series CSV: {series_csv}")
-    print(f"Series Dir: {series_dir}")
+        for root, dirs, files in os.walk("/kaggle/input"):
+            # Prune DICOM/image folders to keep search instant
+            dirs[:] = [d for d in dirs if not any(x in d.lower() for x in ["series", "image", "dicom", "dcm", "studies"])]
+            if "train.csv" in files:
+                train_csv = os.path.join(root, "train.csv")
+                print(f"  --> Found train.csv at: {train_csv}")
+                if "train_series.csv" in files:
+                    series_csv = os.path.join(root, "train_series.csv")
+                    print(f"  --> Found train_series.csv at: {series_csv}")
+                for cand in ["train_series", "train_images", "train"]:
+                    cand_p = os.path.join(root, cand)
+                    if os.path.isdir(cand_p):
+                        series_dir = cand_p
+                        print(f"  --> Found train series dir at: {series_dir}")
+                        break
+                break
+
+    # 2. Local fallback
+    if train_csv is None or not os.path.exists(train_csv):
+        local_root = os.path.abspath("data/raw")
+        if os.path.exists(os.path.join(local_root, "train.csv")):
+            train_csv = os.path.join(local_root, "train.csv")
+            series_csv = os.path.join(local_root, "train_series.csv")
+            series_dir = os.path.join(local_root, "sample_dicom")
+
+    print(f"\nFinal Paths:")
+    print(f"  Train CSV : {train_csv}")
+    print(f"  Series CSV: {series_csv}")
+    print(f"  Series Dir: {series_dir}")
     return train_csv, series_csv, series_dir
 
 
