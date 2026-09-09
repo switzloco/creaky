@@ -191,55 +191,39 @@ FINDING_PATTERNS = {
 - Negation words: "no", "not", "without", "absent", "negative", "unremarkable", "intact", "normal", "deny", "denies"
 - Hedging words that should map to UNK: "cannot exclude", "possible", "questionable", "equivocal", "indeterminate"
 
-### Step 1B: LLM-Based Labeler
+### Step 1B: LLM-Based Labeler (Gemma 4 Strategy)
 
 **File:** `scripts/label_mining/llm_labeler.py`
 
-Use an LLM to extract labels from reports where regex fails or for non-English reports.
+Use a state-of-the-art model, specifically **Gemma 4 (Latest Generation)**, to act as the primary offline label extractor for all reports. Older LLMs (like Gemma 2 or PaliGemma) lack the nuanced reasoning required for complex, multilingual medical text and implicit negation.
 
-**Prompt template:**
+**Prompt template & Strategy (Inspired by "Two Readers" Winning Notebook):**
 ```
-You are a radiology report parser. Given the following knee MRI radiology report,
-extract whether each of the following 12 findings is present.
+You are an expert radiologist. Given the following knee MRI radiology report,
+extract the status for the 12 target findings.
 
-For each finding, respond with exactly one of:
-- "YES" — the finding is clearly described as present
-- "NO" — the finding is clearly described as absent or the structure is described as normal
-- "UNK" — the report does not mention this finding, or the language is ambiguous
+For each finding, respond with:
+- STATUS: "YES" (present), "NO" (absent/normal), or "UNK" (not mentioned/ambiguous)
+- CONFIDENCE: 0.0 to 1.0 (weight for the loss function so silent findings don't penalize)
+- SEVERITY: (Optional if present: mild, moderate, severe)
 
 Report:
 {report_text}
 
-Respond in this exact JSON format:
-{
-  "ACL": "YES|NO|UNK",
-  "MCL": "YES|NO|UNK",
-  "Medial Meniscus": "YES|NO|UNK",
-  "Lateral Meniscus": "YES|NO|UNK",
-  "Medial OA": "YES|NO|UNK",
-  "Lateral OA": "YES|NO|UNK",
-  "PF OA": "YES|NO|UNK",
-  "Effusion": "YES|NO|UNK",
-  "Synovitis": "YES|NO|UNK",
-  "Bakers": "YES|NO|UNK",
-  "Contusion": "YES|NO|UNK",
-  "Fracture": "YES|NO|UNK"
-}
+Respond in structured JSON format.
 ```
 
 **Implementation notes:**
-1. Use Gemini API (user has access) or fall back to a locally-run model on Kaggle GPU
-2. Process ALL 4,349 unlabeled reports through the LLM
-3. Parse the JSON response; if parsing fails, retry up to 3 times with temperature=0
-4. Also run against the 58 labeled reports for validation
-5. Save outputs as `llm_labels_raw.csv`
-6. Consider batching reports to reduce API costs
+1. **Gemma 4:** Run Gemma 4 (via API or offline local generation) to parse the 4,349 unlabeled reports.
+2. **Confidence Weighting:** The extracted confidence scores will be used during training so that unmentioned findings ("UNK") have a lower weight in the loss function, avoiding penalization.
+3. **Offline Processing:** This step must be done *offline* or in a separate notebook. The final output (`report_labels.csv`) is uploaded as a Kaggle Dataset and mounted into the vision training notebook.
+4. Parse the JSON response; if parsing fails, retry up to 3 times with temperature=0.
+5. Also run against the 58 labeled reports for validation.
 
 **Important rule compliance note:**
 > The competition rules require that any external LLM/API used must comply with their
 > data security requirements. Enterprise/API configurations with no data retention are
-> recommended. The radiology reports are de-identified, but check the rules carefully.
-> Open-weights models run locally on Kaggle are the safest option.
+> recommended. Open-weights models (like Gemma 4) run locally are the safest option.
 
 ### Step 1C: Label Validator
 
@@ -262,20 +246,21 @@ Compare your extracted labels against the 58 gold-standard expert labels.
 
 **File:** `scripts/label_mining/assemble_labels.py`
 
-Merge regex and LLM labels into final training labels:
+Merge regex and Gemma 4 labels into final training labels:
 
 **Merge strategy (priority order):**
-1. If the study has a gold-standard label → use it (58 studies)
-2. If regex and LLM agree → use the agreed label
-3. If they disagree → use the LLM label (it handles nuance better)
-4. If both are UNK → assign `0.5` (soft label expressing uncertainty)
-5. Map YES → `1.0`, NO → `0.0`, UNK → `0.5`
+1. If the study has a gold-standard label → use it (58 studies, highest confidence)
+2. If regex and Gemma 4 agree → use the agreed label
+3. If they disagree → use the Gemma 4 label (it handles nuance better)
+4. If both are UNK → assign `0.5` (soft label expressing uncertainty) and apply a low confidence weight.
+5. Map YES → `1.0`, NO → `0.0`, UNK → `0.5`. Map the Gemma 4 confidence scores into sample weights.
 
-**Output:** `train_labels.csv` with columns:
+**Output:** `report_labels.csv` (or `train_labels.csv`) with columns:
 ```
 StudyInstanceUID, ACL, MCL, Medial Meniscus, Lateral Meniscus, Medial OA,
 Lateral OA, PF OA, Effusion, Synovitis, Bakers, Contusion, Fracture,
-label_source (gold|regex|llm|soft)
+label_source (gold|regex|llm|soft),
+ACL_weight, MCL_weight, ... (confidence weights for the loss function)
 ```
 
 ---
