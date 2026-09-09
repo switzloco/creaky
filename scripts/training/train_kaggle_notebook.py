@@ -540,12 +540,16 @@ def compute_competition_metric(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[
     for i, col in enumerate(TARGET_COLS):
         yt = y_true[:, i]
         yp = y_pred[:, i]
-        classes = np.unique(yt[~np.isnan(yt)])
+        # Only evaluate AUC on definitive binary ground-truth (0.0 or 1.0), excluding soft 0.5
+        mask = (yt == 0.0) | (yt == 1.0)
+        yt_bin = yt[mask]
+        yp_bin = yp[mask]
+        classes = np.unique(yt_bin)
         if len(classes) < 2:
             auc = 0.5
         else:
             try:
-                auc = roc_auc_score(yt, yp)
+                auc = float(roc_auc_score(yt_bin, yp_bin))
             except Exception:
                 auc = 0.5
         per_class[col] = float(auc)
