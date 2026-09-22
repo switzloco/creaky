@@ -58,26 +58,38 @@ def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_
         reg_row = regex_preds.loc[study_uid] if study_uid in regex_preds.index else None
 
         for target in TARGET_COLS:
+            val = 0.5
+            weight = 0.1
+            src = "soft_unk"
+
             if is_gold:
                 val = float(row[target])
+                weight = 1.0  # Gold standard is 100% confident
                 src = "gold"
             else:
                 regex_val = reg_row[target] if reg_row is not None else np.nan
                 llm_val = None
+                llm_weight = 0.5
                 if llm_preds is not None and study_uid in llm_preds.index:
                     llm_val = llm_preds.loc[study_uid, target]
+                    if f"{target}_weight" in llm_preds.columns:
+                        llm_weight = float(llm_preds.loc[study_uid, f"{target}_weight"])
 
                 if llm_val is not None and not pd.isna(llm_val):
                     val = float(llm_val)
+                    weight = llm_weight
                     src = "llm"
                 elif not pd.isna(regex_val):
                     val = float(regex_val)
+                    weight = 0.8  # Regex is decently confident if it triggers
                     src = "regex"
                 else:
                     val = 0.5  # Soft uncertainty label
+                    weight = 0.1  # Very low confidence for UNK
                     src = "soft_unk"
 
             out_row[target] = val
+            out_row[f"{target}_weight"] = weight
             sources.append(src)
 
         if "gold" in sources:
@@ -90,7 +102,6 @@ def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_
             out_row["label_source"] = "soft_unk"
 
         assembled_rows.append(out_row)
-
 
     out_df = pd.DataFrame(assembled_rows)
     
