@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSNA Knee Abnormality Detection - Architecture Grok Quiz</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --correct-bg: #064e3b;
+      --correct-border: #10b981;
+      --wrong-bg: #7f1d1d;
+      --wrong-border: #ef4444;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 2rem 1rem; line-height: 1.6; }
+    .container { max-width: 860px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 2.5rem; }
+    h1 { font-size: 2.2rem; color: var(--primary); margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+    .score-banner {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 1rem;
+      z-index: 50;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+    }
+    .score-text { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+    .progress-bar-bg { width: 50%; height: 10px; background: #334155; border-radius: 5px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease; }
+    .question-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 1.75rem;
+      transition: border-color 0.2s;
+    }
+    .question-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+    .q-num {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .q-title { font-size: 1.2rem; font-weight: 600; color: #fff; }
+    .options-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .option-btn {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      text-align: left;
+      padding: 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+    .option-btn:hover:not(:disabled) {
+      border-color: var(--primary);
+      background: #172554;
+    }
+    .option-btn.selected-correct {
+      background: var(--correct-bg) !important;
+      border-color: var(--correct-border) !important;
+      color: #ecfdf5 !important;
+    }
+    .option-btn.selected-wrong {
+      background: var(--wrong-bg) !important;
+      border-color: var(--wrong-border) !important;
+      color: #fef2f2 !important;
+    }
+    .option-btn:disabled { cursor: default; opacity: 0.9; }
+    .feedback-box {
+      margin-top: 1.25rem;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .feedback-box.correct {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--correct-border);
+      color: #6ee7b7;
+    }
+    .feedback-box.wrong {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--wrong-border);
+      color: #fca5a5;
+    }
+    .feedback-title { font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .feedback-details { color: #cbd5e1; }
+    .code-snippet { background: #020617; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; color: #38bdf8; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>RSNA Knee Architecture Grok Quiz</h1>
+      <p class="subtitle">Test your grasp of clinical routing, multimodal label extraction, and 2.5D vision engineering.</p>
+    </header>
+
+    <div class="score-banner">
+      <div class="score-text" id="score-text">Answered: 0 / 10 | Score: 0%</div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-bar"></div>
+      </div>
+    </div>
+
+    <div id="quiz-container"></div>
+  </div>
+
+  <script>
+    const questions = [
+      {
+        id: 1,
+        title: "The 0.500 Mystery",
+        text: "Why did our very first Kaggle submission score mathematically 0.5000 on the competition leaderboard?",
+        options: [
+          { text: "The model was trained with the wrong learning rate (0.500).", correct: false },
+          { text: "The inference notebook couldn't find the weights file, defaulted to fixed priors, and outputted the exact same constant probabilities for every patient (std dev = 0.0000).", correct: true },
+          { text: "The test set had corrupted DICOM headers that PyTorch couldn't open.", correct: false },
+          { text: "In ROC AUC, 0.5000 means the model got 50% of the predictions 100% correct.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Spot On! (The Constant Fallback Bug)",
+          correct: "Mathematically, the ROC curve measures your ability to rank true positives higher than false positives. If a model outputs identical constant values across all rows, the True Positive Rate and False Positive Rate increase along the diagonal line, producing an integral (AUC) of exactly 0.50000 regardless of the threshold.",
+          wrong: "Incorrect. The root cause was that the notebook fell back to DEFAULT_PRIORS when checkpoint paths were missing. Because every test case received the exact same constant probability vector, ranking discrimination was zero, which yields an AUC of exactly 0.5000."
+        }
+      },
+      {
+        id: 2,
+        title: "The Label Mining Bottleneck",
+        text: "RSNA provided only 58 expert gold studies, leaving 4,349 studies with only free-text reports. Why couldn't we simply use a basic keyword regex search to build training labels?",
+        options: [
+          { text: "Radiologists write in encrypted hospital code.", correct: false },
+          { text: "Basic regex collapses on negations ('no tear'), hedging ('cannot exclude tear'), and multilingual clinical text (reports in 12 languages).", correct: true },
+          { text: "Regex only matches numbers, not medical strings.", correct: false },
+          { text: "Regex labels consume 4x more VRAM when loaded into PyTorch.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Crucial Insight! (Clinical Language Nuance)",
+          correct: "In medicine, doctors spend 70% of a report ruling out disease ('sin derrame articular', 'no focal tear', 'kein meniskusriss'). Naive keyword regex searches flag 'tear' and wrongly mark it positive. Our Jev System One pipeline uses boundary-aware regex with negation and hedge handling, jumping macro AUC from 0.713 to 0.878.",
+          wrong: "Incorrect. The challenge is clinical semantics: negations ('without evidence of'), hedging ('possible vs artifact'), and multi-language variability from international sites make simple keyword regex fail on 25%+ of cases."
+        }
+      },
+      {
+        id: 3,
+        title: "Jev Confidence Loss Weighting",
+        text: "In train_labels.csv, each condition has a target probability and a confidence weight (e.g. 1.0 vs 0.85 vs 0.20). How does our WeightedBCEWithLogitsLoss utilize this weight?",
+        options: [
+          { text: "It multiplies the optimizer learning rate for that specific patient batch.", correct: false },
+          { text: "It scales sample loss: errors on 100% certain/gold cases are penalized heavily, while ambiguous or unknown cases contribute little to the gradient.", correct: true },
+          { text: "It assigns the sample to a faster CUDA stream.", correct: false },
+          { text: "It discards the study if the weight is under 0.5.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Exact Mathematical Understanding!",
+          correct: "By computing loss = (bce * weights).sum() / weights.sum(), the gradient updates are dominated by clean, high-confidence samples (like the 58 Gold cases and clear Silver cases). This prevents noisy or ambiguous labels from poisoning the ResNet weights.",
+          wrong: "Incorrect. Sample weights scale the contribution of each individual target to the loss gradient. Certain ground truth pulls the model strongly, while uncertain labels don't destabilize training."
+        }
+      },
+      {
+        id: 4,
+        title: "Clinical MoE Routing: The ACL",
+        text: "In KneeAnatomicalMoEClassifier, which anatomical plane is the dedicated clinical expert head for ACL and Meniscal tears?",
+        options: [
+          { text: "Coronal (front-to-back cross-sections)", correct: false },
+          { text: "Axial (transverse top-to-bottom cross-sections)", correct: false },
+          { text: "Sagittal (lateral/side-to-side cross-sections)", correct: true },
+          { text: "3D Volume Mesh", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Anatomically Perfect!",
+          correct: "The Anterior Cruciate Ligament (ACL) runs from the posterior femur to the anterior tibia at a ~45-degree angle in the sagittal plane. Similarly, the classic 'bow tie' appearance of the medial and lateral menisci is best evaluated on sagittal slices.",
+          wrong: "Incorrect. The Sagittal plane is the gold standard view for the cruciate ligaments (ACL/PCL) and meniscal anterior/posterior horns."
+        }
+      },
+      {
+        id: 5,
+        title: "Clinical MoE Routing: The MCL",
+        text: "Why is the Coronal plane routed specifically to the MCL (Medial Collateral Ligament) expert head?",
+        options: [
+          { text: "The MCL runs vertically down the inner side of the knee joint, making its entire anatomical course visible from the frontal (coronal) view.", correct: true },
+          { text: "Coronal slices have twice as many pixels as sagittal slices.", correct: false },
+          { text: "The MCL is only visible from the top-down axial perspective.", correct: false },
+          { text: "Coronal scans are only taken on patients who complain of inner knee pain.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Clinical Anatomy Mastered!",
+          correct: "The MCL stabilizes the knee against valgus (inward) stress along the medial joint line. Because it spans from the medial femoral epicondyle to the tibia vertically, coronal slices capture its entire proximal-to-distal length.",
+          wrong: "Incorrect. Because the MCL is a flat, broad band on the medial (inner) side of the joint, coronal (frontal) slices visualize its full trajectory without slice truncation."
+        }
+      },
+      {
+        id: 6,
+        title: "Gated Attention Pooling vs. Average Pooling",
+        text: "Why do we apply Gated Attention Pooling across the 16 slices of a plane instead of simple Average Pooling?",
+        options: [
+          { text: "Average pooling takes up too much GPU memory.", correct: false },
+          { text: "A tear may only be visible on 1 or 2 slices; average pooling dilutes that focal pathology across 14 normal slices, whereas attention pooling lets the model concentrate weights on the abnormal slices.", correct: true },
+          { text: "Attention pooling converts inverted MONOCHROME1 pixels automatically.", correct: false },
+          { text: "Average pooling is mathematically incompatible with ResNet backbones.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Key Computer Vision Principle!",
+          correct: "Medical imaging is inherently sparse: 90% of slices in a knee MRI are anatomically normal, with pathology concentrated on just 1 or 2 slices. Gated attention computes learned weights a_i = softmax(W2(tanh(V h_i) * sigm(U h_i))), allowing the network to highlight the pathological slices.",
+          wrong: "Incorrect. If a tiny meniscus tear is visible on slice 8, averaging slices 1 through 16 divides the tear feature signal by 16! Attention pooling allows the network to dynamically assign 80% of the pooling weight to slice 8."
+        }
+      },
+      {
+        id: 7,
+        title: "Why 2.5D Instead of Full 3D?",
+        text: "Why did we select a 2.5D slice-based architecture over a full 3D Convolutional Neural Network (3D CNN)?",
+        options: [
+          { text: "3D CNNs cannot run on Nvidia GPUs.", correct: false },
+          { text: "Knee MRIs have high slice thickness anisotropy (0.4mm in-plane vs 3-4mm between slices), and 2.5D models leverage massive 2D ImageNet pretraining with manageable VRAM.", correct: true },
+          { text: "PyTorch does not support 3D convolutions.", correct: false },
+          { text: "2.5D models only work on CPU machines.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Architectural Precision!",
+          correct: "Full 3D convolutions assume isotropic voxels (equal spacing in X, Y, Z). Knee MRIs have 0.4mm resolution within a slice, but 3.0mm gaps between slices! In addition, 2D backbones (like ResNet34 and ConvNeXt) have millions of hours of ImageNet pretraining, giving them superior feature extractors.",
+          wrong: "Incorrect. 3D CNNs suffer from voxel anisotropy (slices are spaced far apart compared to pixel size), consume massive VRAM, and lack the rich pretrained representations of 2D vision models."
+        }
+      },
+      {
+        id: 8,
+        title: "The 8-Hour Training Marathon",
+        text: "Why did training take ~8 hours on Kaggle's T4 GPU, despite ResNet-34 being a relatively lightweight architecture?",
+        options: [
+          { text: "The GPU was thermal throttling.", correct: false },
+          { text: "Python (pydicom) was CPU-bound decompressing over 210,000 raw medical DICOM files from disk every epoch while the GPU waited idle for batches.", correct: true },
+          { text: "The AdamW optimizer is 10x slower than SGD on Kaggle.", correct: false },
+          { text: "ResNet-34 contains 100 billion parameters.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "The I/O Bottleneck Identified!",
+          correct: "In deep learning, you never want your GPU waiting on disk. Reading and decompressing 210,000 DICOM files in Python takes ~0.8s per study * 4,407 studies = ~3,500s (~1 hour) per epoch purely in file I/O! Pre-caching into fast arrays will cut future runs to ~20 minutes.",
+          wrong: "Incorrect. ResNet-34 only has 21M parameters and forward passes take milliseconds. The bottleneck was raw DICOM decompression on disk."
+        }
+      },
+      {
+        id: 9,
+        title: "Kaggle Submission Rules (Internet Sandbox)",
+        text: "Why did training-book have enable_internet: true, while submission-notebook MUST have enable_internet: false?",
+        options: [
+          { text: "Kaggle charges bandwidth fees for inference kernels.", correct: false },
+          { text: "Kaggle code competition integrity rules require submissions to run completely offline to prevent external API calls, test data exfiltration, or label lookups.", correct: true },
+          { text: "Internet access degrades PyTorch FP16 precision.", correct: false },
+          { text: "CUDA drivers fail if Wi-Fi packets are received during inference.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Competition Rule Compliance!",
+          correct: "Kaggle code competitions run test inference in an isolated, network-disabled container so participants cannot call external models (like GPT-4/Gemini APIs) or send test predictions to a private server. Pretrained weights must be uploaded as Kaggle Models or Datasets.",
+          wrong: "Incorrect. All Kaggle code competitions strictly disable internet for submission notebooks to guarantee competition fairness and data isolation."
+        }
+      },
+      {
+        id: 10,
+        title: "The Anti-Collapse Guardrail",
+        text: "In our updated submission notebook, what is the role of the check: if sub_df[col].std() < 1e-4?",
+        options: [
+          { text: "It immediately detects if predictions have collapsed to a constant value across patients, alerting us before an accidental 0.500 score is recorded.", correct: true },
+          { text: "It verifies that floating-point numbers have enough decimal places.", correct: false },
+          { text: "It checks for duplicate patient IDs in the test set.", correct: false },
+          { text: "It automatically scales all predictions to sum to 1.0.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Defense in Depth!",
+          correct: "If a weights path breaks or a bug causes the model to output default priors for all cases, the variance (std dev) drops to 0.00000. Our automated sanity check measures std dev across test cases and triggers an alert if predictions don't vary dynamically!",
+          wrong: "Incorrect. The variance check ensures the model is actually making patient-specific predictions and hasn't fallen back to constant numbers that produce a 0.5000 leaderboard failure."
+        }
+      }
+    ];
+
+    let userAnswers = {};
+
+    function renderQuiz() {
+      const container = document.getElementById("quiz-container");
+      container.innerHTML = "";
+
+      questions.forEach((q, qIndex) => {
+        const card = document.createElement("div");
+        card.className = "question-card";
+        card.id = `q-card-${q.id}`;
+
+        const header = document.createElement("div");
+        header.className = "question-header";
+        header.innerHTML = `
+          <span class="q-num">Q${q.id}</span>
+          <span class="q-title">${q.title}</span>
+        `;
+
+        const questionText = document.createElement("p");
+        questionText.style.marginBottom = "1.25rem";
+        questionText.style.color = "#e2e8f0";
+        questionText.textContent = q.text;
+
+        const optionsList = document.createElement("div");
+        optionsList.className = "options-list";
+
+        q.options.forEach((opt, optIndex) => {
+          const btn = document.createElement("button");
+          btn.className = "option-btn";
+          btn.id = `opt-${q.id}-${optIndex}`;
+          btn.innerHTML = `<strong>${String.fromCharCode(65 + optIndex)})</strong> <span>${opt.text}</span>`;
+          btn.onclick = () => selectOption(q.id, optIndex);
+          optionsList.appendChild(btn);
+        });
+
+        const feedbackBox = document.createElement("div");
+        feedbackBox.className = "feedback-box";
+        feedbackBox.id = `feedback-${q.id}`;
+
+        card.appendChild(header);
+        card.appendChild(questionText);
+        card.appendChild(optionsList);
+        card.appendChild(feedbackBox);
+
+        container.appendChild(card);
+      });
+    }
+
+    function selectOption(qId, selectedIndex) {
+      const question = questions.find(q => q.id === qId);
+      userAnswers[qId] = selectedIndex;
+
+      // Disable all buttons for this question
+      question.options.forEach((_, idx) => {
+        const btn = document.getElementById(`opt-${qId}-${idx}`);
+        btn.disabled = true;
+      });
+
+      const selectedBtn = document.getElementById(`opt-${qId}-${selectedIndex}`);
+      const isCorrect = question.options[selectedIndex].correct;
+
+      const feedbackBox = document.getElementById(`feedback-${qId}`);
+      feedbackBox.style.display = "block";
+
+      if (isCorrect) {
+        selectedBtn.classList.add("selected-correct");
+        feedbackBox.className = "feedback-box correct";
+        feedbackBox.innerHTML = `
+          <div class="feedback-title">✓ ${question.feedback.correctTitle}</div>
+          <div class="feedback-details">${question.feedback.correct}</div>
+        `;
+      } else {
+        selectedBtn.classList.add("selected-wrong");
+        // Highlight the correct one
+        const correctIdx = question.options.findIndex(o => o.correct);
+        const correctBtn = document.getElementById(`opt-${qId}-${correctIdx}`);
+        correctBtn.classList.add("selected-correct");
+
+        feedbackBox.className = "feedback-box wrong";
+        feedbackBox.innerHTML = `
+          <div class="feedback-title">✗ Needs Review</div>
+          <div class="feedback-details">${question.feedback.wrong}</div>
+        `;
+      }
+
+      updateScore();
+    }
+
+    function updateScore() {
+      const totalAnswered = Object.keys(userAnswers).length;
+      let correctCount = 0;
+
+      for (let qId in userAnswers) {
+        const q = questions.find(item => item.id == qId);
+        if (q.options[userAnswers[qId]].correct) {
+          correctCount++;
+        }
+      }
+
+      const percent = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+      document.getElementById("score-text").textContent = `Answered: ${totalAnswered} / 10 | Score: ${correctCount}/${totalAnswered} (${percent}%)`;
+      document.getElementById("progress-bar").style.width = `${(totalAnswered / 10) * 100}%`;
+    }
+
+    renderQuiz();
+  </script>
+</body>
+</html>

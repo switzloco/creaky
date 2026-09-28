@@ -23,8 +23,13 @@ if current_dir not in sys.path:
 from regex_labeler import RegexLabeler, TARGET_COLS
 
 
-def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_path: str = None) -> pd.DataFrame:
-    """Build train_labels.csv from gold standard + regex + optional LLM."""
+def assemble_training_labels(
+    train_csv_path: str,
+    output_csv_path: str,
+    jev_csv_path: str = "data/processed/jev_encoded_features.csv",
+    llm_csv_path: str = None
+) -> pd.DataFrame:
+    """Build train_labels.csv from gold standard + Jev System One + regex + optional LLM."""
     print(f"Loading training data from: {train_csv_path}")
     df = pd.read_csv(train_csv_path)
     total_studies = len(df)
@@ -35,57 +40,56 @@ def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_
     gold_count = gold_mask.sum()
     print(f"Expert gold-annotated studies: {gold_count}")
 
-    # 2. Run regex labeler on all studies
-    print("Running multilingual regex labeler across all studies...")
-    labeler = RegexLabeler()
-    regex_preds = labeler.label_dataframe(df).set_index("StudyInstanceUID")
+    # 2. Load Jev System One features (0.878 gold AUC)
+    jev_df = None
+    if jev_csv_path and os.path.exists(jev_csv_path):
+        print(f"Loading Jev System One features from: {jev_csv_path}")
+        jev_df = pd.read_csv(jev_csv_path).set_index("StudyInstanceUID")
+        print(f"Loaded {len(jev_df)} Jev encoded studies.")
 
-    # 3. Load LLM preds if provided
-    llm_preds = None
-    if llm_csv_path and os.path.exists(llm_csv_path):
-        print(f"Loading LLM labels from: {llm_csv_path}")
-        llm_preds = pd.read_csv(llm_csv_path).set_index("StudyInstanceUID")
+    # 3. Fallback regex labeler if Jev missing
+    labeler = None
+    regex_preds = None
 
     # Combine into master dataframe
     assembled_rows = []
     
     for _, row in df.iterrows():
-        study_uid = row["StudyInstanceUID"]
+        study_uid = str(row["StudyInstanceUID"])
         out_row = {"StudyInstanceUID": study_uid}
         sources = []
 
         is_gold = not pd.isna(row["ACL"])
-        reg_row = regex_preds.loc[study_uid] if study_uid in regex_preds.index else None
+        jev_row = jev_df.loc[study_uid] if (jev_df is not None and study_uid in jev_df.index) else None
 
         for target in TARGET_COLS:
             val = 0.5
-            weight = 0.1
+            weight = 0.2
             src = "soft_unk"
 
             if is_gold:
                 val = float(row[target])
                 weight = 1.0  # Gold standard is 100% confident
                 src = "gold"
+            elif jev_row is not None and f"{target}_jev_prob" in jev_row:
+                prob = float(jev_row[f"{target}_jev_prob"])
+                val = prob
+                # Confidence weight: high when confident (prob ~0 or ~1), low when uncertain (prob ~0.5)
+                conf = float(np.clip(0.3 + 1.4 * abs(prob - 0.5), 0.3, 1.0))
+                weight = conf
+                src = "jev"
             else:
-                regex_val = reg_row[target] if reg_row is not None else np.nan
-                llm_val = None
-                llm_weight = 0.5
-                if llm_preds is not None and study_uid in llm_preds.index:
-                    llm_val = llm_preds.loc[study_uid, target]
-                    if f"{target}_weight" in llm_preds.columns:
-                        llm_weight = float(llm_preds.loc[study_uid, f"{target}_weight"])
-
-                if llm_val is not None and not pd.isna(llm_val):
-                    val = float(llm_val)
-                    weight = llm_weight
-                    src = "llm"
-                elif not pd.isna(regex_val):
-                    val = float(regex_val)
-                    weight = 0.8  # Regex is decently confident if it triggers
+                if labeler is None:
+                    labeler = RegexLabeler()
+                    regex_preds = labeler.label_dataframe(df).set_index("StudyInstanceUID")
+                reg_val = regex_preds.loc[study_uid, target] if (regex_preds is not None and study_uid in regex_preds.index) else np.nan
+                if not pd.isna(reg_val):
+                    val = float(reg_val)
+                    weight = 0.8
                     src = "regex"
                 else:
-                    val = 0.5  # Soft uncertainty label
-                    weight = 0.1  # Very low confidence for UNK
+                    val = 0.5
+                    weight = 0.2
                     src = "soft_unk"
 
             out_row[target] = val
@@ -94,8 +98,8 @@ def assemble_training_labels(train_csv_path: str, output_csv_path: str, llm_csv_
 
         if "gold" in sources:
             out_row["label_source"] = "gold"
-        elif "llm" in sources:
-            out_row["label_source"] = "llm"
+        elif "jev" in sources:
+            out_row["label_source"] = "jev"
         elif "regex" in sources:
             out_row["label_source"] = "regex"
         else:
@@ -125,7 +129,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Assemble train_labels.csv")
     parser.add_argument("--train_csv", default="data/raw/train.csv")
     parser.add_argument("--out_csv", default="data/processed/train_labels.csv")
+    parser.add_argument("--jev_csv", default="data/processed/jev_encoded_features.csv")
     parser.add_argument("--llm_csv", default=None)
     args = parser.parse_args()
 
-    assemble_training_labels(args.train_csv, args.out_csv, args.llm_csv)
+    assemble_training_labels(args.train_csv, args.out_csv, args.jev_csv, args.llm_csv)
+

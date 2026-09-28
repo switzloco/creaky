@@ -23,8 +23,10 @@ import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as tv_models
 
 # ==============================================================================
+
 # CONFIGURATION & CONSTANTS
 # ==============================================================================
 
@@ -356,12 +358,113 @@ class GatedAttentionPool(nn.Module):
         return pooled
 
 
-class KneeAbnormalityClassifier(nn.Module):
+class KneeAnatomicalMoEClassifier(nn.Module):
+    """Multi-Planar 2.5D Knee Model with Anatomical Plane-Specific Expert Routing."""
+    def __init__(
+        self,
+        backbone_name: str = "resnet34",
+        pretrained: bool = False,
+        num_classes: int = 12,
+        dropout: float = 0.2
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+
+        # ResNet Backbone
+        try:
+            resnet = getattr(tv_models, backbone_name)(weights=None)
+            self.feat_dim = resnet.fc.in_features
+            resnet.fc = nn.Identity()
+            self.encoder = resnet
+        except Exception:
+            # Fallback encoder if named backbone fails
+            resnet = tv_models.resnet34(weights=None)
+            self.feat_dim = resnet.fc.in_features
+            resnet.fc = nn.Identity()
+            self.encoder = resnet
+
+        self.sag_pool = GatedAttentionPool(self.feat_dim)
+        self.cor_pool = GatedAttentionPool(self.feat_dim)
+        self.ax_pool = GatedAttentionPool(self.feat_dim)
+
+        combined_dim = self.feat_dim * 3
+
+        self.sag_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.feat_dim + combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 3)
+        )
+
+        self.cor_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.feat_dim + combined_dim, 128),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 1)
+        )
+
+        self.ax_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.feat_dim + combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 3)
+        )
+
+        self.joint_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 5)
+        )
+
+    def _encode_plane(self, x: torch.Tensor, pool_module: GatedAttentionPool) -> torch.Tensor:
+        B, K, C, H, W = x.shape
+        x_flat = x.view(B * K, C, H, W)
+        feats = self.encoder(x_flat)
+        if isinstance(feats, torch.Tensor) and feats.dim() > 2:
+            feats = feats.flatten(1)
+        feats = feats.view(B, K, self.feat_dim)
+        return pool_module(feats)
+
+    def forward(self, sag: torch.Tensor, cor: torch.Tensor, ax: torch.Tensor) -> torch.Tensor:
+        h_sag = self._encode_plane(sag, self.sag_pool)
+        h_cor = self._encode_plane(cor, self.cor_pool)
+        h_ax = self._encode_plane(ax, self.ax_pool)
+
+        combined = torch.cat([h_sag, h_cor, h_ax], dim=1)
+
+        out_sag = self.sag_head(torch.cat([h_sag, combined], dim=1))
+        out_cor = self.cor_head(torch.cat([h_cor, combined], dim=1))
+        out_ax = self.ax_head(torch.cat([h_ax, combined], dim=1))
+        out_joint = self.joint_head(combined)
+
+        logits = torch.stack([
+            out_sag[:, 0],     # ACL
+            out_cor[:, 0],     # MCL
+            out_sag[:, 1],     # Medial Meniscus
+            out_sag[:, 2],     # Lateral Meniscus
+            out_joint[:, 0],   # Medial OA
+            out_joint[:, 1],   # Lateral OA
+            out_ax[:, 0],      # PF OA
+            out_ax[:, 1],      # Effusion
+            out_ax[:, 2],      # Synovitis
+            out_joint[:, 2],   # Baker's
+            out_joint[:, 3],   # Contusion
+            out_joint[:, 4],   # Fracture
+        ], dim=1)
+
+        return logits
+
+
+class LegacyKneeClassifier(nn.Module):
+    """Fallback legacy classifier for older checkpoints."""
     def __init__(self, feat_dim: int = 512, num_classes: int = 12, dropout: float = 0.2):
         super().__init__()
         self.feat_dim = feat_dim
-
-        # Backbone
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(32),
@@ -380,7 +483,6 @@ class KneeAbnormalityClassifier(nn.Module):
             nn.SiLU(),
             nn.AdaptiveAvgPool2d((1, 1))
         )
-
         self.sag_pool = GatedAttentionPool(feat_dim)
         self.cor_pool = GatedAttentionPool(feat_dim)
         self.ax_pool = GatedAttentionPool(feat_dim)
@@ -399,16 +501,17 @@ class KneeAbnormalityClassifier(nn.Module):
         x_flat = x.view(B * K, C, H, W)
         feats = self.encoder(x_flat).flatten(1)
         feats = feats.view(B, K, self.feat_dim)
-        pooled = pool_module(feats)
-        return pooled
+        return pool_module(feats)
 
     def forward(self, sag: torch.Tensor, cor: torch.Tensor, ax: torch.Tensor) -> torch.Tensor:
         h_sag = self._encode_plane(sag, self.sag_pool)
         h_cor = self._encode_plane(cor, self.cor_pool)
         h_ax = self._encode_plane(ax, self.ax_pool)
         combined = torch.cat([h_sag, h_cor, h_ax], dim=1)
-        logits = self.head(combined)
-        return logits
+        return self.head(combined)
+
+KneeAbnormalityClassifier = KneeAnatomicalMoEClassifier
+
 
 
 # ==============================================================================
@@ -457,17 +560,24 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
         print(f"Found {len(ckpt_files)} model checkpoints. Loading ensemble...")
         for ckpt_path in ckpt_files:
             try:
-                model = KneeAbnormalityClassifier().to(device)
                 state = torch.load(ckpt_path, map_location=device)
-                if "model_state_dict" in state:
-                    model.load_state_dict(state["model_state_dict"], strict=False)
+                sd = state["model_state_dict"] if (isinstance(state, dict) and "model_state_dict" in state) else state
+                arch = state.get("architecture", "") if isinstance(state, dict) else ""
+                bb = state.get("backbone", "resnet34") if isinstance(state, dict) else "resnet34"
+
+                is_moe = any("sag_head" in k for k in sd.keys()) or arch == "KneeAnatomicalMoEClassifier"
+                if is_moe:
+                    model = KneeAnatomicalMoEClassifier(backbone_name=bb, pretrained=False).to(device)
                 else:
-                    model.load_state_dict(state, strict=False)
+                    model = LegacyKneeClassifier().to(device)
+
+                model.load_state_dict(sd, strict=False)
                 model.eval()
                 models.append(model)
-                print(f"  Loaded model from: {ckpt_path}")
+                print(f"  Loaded model from: {ckpt_path} (MoE: {is_moe}, Backbone: {bb})")
             except Exception as e:
                 print(f"  Warning: Failed to load {ckpt_path}: {e}")
+
 
     submission_rows = []
 
@@ -507,9 +617,18 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
                     pattern = os.path.join(test_series_dir, study_uid, series_uid, "*.dcm")
                     series_files = glob.glob(pattern)
                     if not series_files:
-                        # Try flat structure
+                        # Try flat series subfolder
                         pattern_alt = os.path.join(test_series_dir, series_uid, "*.dcm")
                         series_files = glob.glob(pattern_alt)
+                    if not series_files:
+                        # Try flat study subfolder
+                        pattern_study = os.path.join(test_series_dir, study_uid, "*.dcm")
+                        series_files = glob.glob(pattern_study)
+                    if not series_files:
+                        # Try direct flat DICOM folder (e.g. sample_dicom/*.dcm)
+                        all_dcms = glob.glob(os.path.join(test_series_dir, "*.dcm"))
+                        if all_dcms:
+                            series_files = all_dcms
             elif test_series_dir and os.path.isdir(test_series_dir):
                 # No plane column — grab all series for this study, use first available
                 study_dir = os.path.join(test_series_dir, study_uid)
@@ -520,6 +639,14 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
                         plane_idx = ["Sagittal", "Coronal", "Axial"].index(plane)
                         if plane_idx < len(series_dirs):
                             series_files = glob.glob(os.path.join(study_dir, series_dirs[plane_idx], "*.dcm"))
+                if not series_files:
+                    all_dcms = glob.glob(os.path.join(test_series_dir, "*.dcm"))
+                    if all_dcms:
+                        series_files = all_dcms
+
+            if idx < 3:
+                print(f"  Study {study_uid[:15]}... | {plane:8s} | Found {len(series_files)} slices")
+
 
             # Load and preprocess
             tensor = load_and_preprocess_series(series_files, target_size=(256, 256), num_slices=16)
@@ -548,12 +675,24 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
     final_cols = ["StudyInstanceUID"] + TARGET_COLS
     sub_df = sub_df[final_cols]
 
+    # Sanity checks to prevent constant 0.500 fallback
+    if len(sub_df) > 1:
+        stds = [sub_df[t].std() for t in TARGET_COLS]
+        avg_std = float(np.mean(stds))
+        print(f"Submission sanity check: Average per-target std dev = {avg_std:.6f}")
+        if avg_std < 1e-4:
+            print("[!] CRITICAL WARNING: Predictions appear to be identical constants across test studies!")
+            print("    Check that model checkpoints and DICOM files are properly loaded.")
+        else:
+            print("[OK] Predictions vary dynamically across test cases.")
+
     sub_df.to_csv(output_path, index=False)
     print(f"\nSuccessfully generated submission file: {output_path}")
     print(f"Shape: {sub_df.shape}")
     print(sub_df.head())
 
     return sub_df
+
 
 
 if __name__ == "__main__":

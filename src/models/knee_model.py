@@ -157,10 +157,173 @@ class KneeAbnormalityClassifier(nn.Module):
         return logits
 
 
+class KneeAnatomicalMoEClassifier(nn.Module):
+    """Multi-Planar 2.5D Knee Model with Anatomical Plane-Specific Expert Routing.
+    
+    Routes anatomical representations according to clinical MR physics:
+    - Sagittal plane -> ACL, Medial Meniscus, Lateral Meniscus heads
+    - Coronal plane -> MCL head
+    - Axial plane -> PF OA, Effusion, Synovitis heads
+    - Combined multi-planar -> Medial OA, Lateral OA, Baker's, Contusion, Fracture heads
+    """
+    def __init__(
+        self,
+        backbone_name: str = "resnet34",
+        pretrained: bool = True,
+        num_classes: int = 12,
+        dropout: float = 0.2
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+
+        # Initialize slice encoder backbone
+        feat_dim = 512
+        if HAS_TIMM:
+            try:
+                self.encoder = timm.create_model(
+                    backbone_name,
+                    pretrained=pretrained,
+                    num_classes=0,
+                    in_chans=3
+                )
+                feat_dim = self.encoder.num_features
+            except Exception:
+                self.encoder = None
+
+        if not hasattr(self, "encoder") or self.encoder is None:
+            try:
+                import torchvision.models as tv_models
+                if backbone_name == "resnet34":
+                    weights = tv_models.ResNet34_Weights.DEFAULT if pretrained else None
+                    resnet = tv_models.resnet34(weights=weights)
+                    feat_dim = resnet.fc.in_features
+                    resnet.fc = nn.Identity()
+                    self.encoder = resnet
+                elif backbone_name == "resnet18":
+                    weights = tv_models.ResNet18_Weights.DEFAULT if pretrained else None
+                    resnet = tv_models.resnet18(weights=weights)
+                    feat_dim = resnet.fc.in_features
+                    resnet.fc = nn.Identity()
+                    self.encoder = resnet
+                elif backbone_name == "resnet50":
+                    weights = tv_models.ResNet50_Weights.DEFAULT if pretrained else None
+                    resnet = tv_models.resnet50(weights=weights)
+                    feat_dim = resnet.fc.in_features
+                    resnet.fc = nn.Identity()
+                    self.encoder = resnet
+                elif backbone_name in ["convnext_tiny", "convnext_small"]:
+                    factory = tv_models.convnext_small if backbone_name == "convnext_small" else tv_models.convnext_tiny
+                    w_enum = tv_models.ConvNeXt_Small_Weights.DEFAULT if backbone_name == "convnext_small" else tv_models.ConvNeXt_Tiny_Weights.DEFAULT
+                    weights = w_enum if pretrained else None
+                    model = factory(weights=weights)
+                    feat_dim = model.classifier[2].in_features
+                    model.classifier[2] = nn.Identity()
+                    self.encoder = model
+                elif backbone_name in ["efficientnet_v2_s", "effnet"]:
+                    weights = tv_models.EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
+                    model = tv_models.efficientnet_v2_s(weights=weights)
+                    feat_dim = model.classifier[1].in_features
+                    model.classifier[1] = nn.Identity()
+                    self.encoder = model
+                else:
+                    self.encoder = LightweightBackbone(out_features=512)
+                    feat_dim = 512
+            except Exception:
+                self.encoder = LightweightBackbone(out_features=512)
+                feat_dim = 512
+
+        self.feat_dim = feat_dim
+
+        # Gated attention pooling per anatomical plane
+        self.sag_pool = GatedAttentionPool(feat_dim)
+        self.cor_pool = GatedAttentionPool(feat_dim)
+        self.ax_pool = GatedAttentionPool(feat_dim)
+
+        combined_dim = feat_dim * 3
+
+        # Anatomical Expert Heads
+        self.sag_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(feat_dim + combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 3)  # [ACL, Medial Meniscus, Lateral Meniscus]
+        )
+
+        self.cor_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(feat_dim + combined_dim, 128),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 1)  # [MCL]
+        )
+
+        self.ax_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(feat_dim + combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 3)  # [PF OA, Effusion, Synovitis]
+        )
+
+        self.joint_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(combined_dim, 256),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 5)  # [Medial OA, Lateral OA, Baker's, Contusion, Fracture]
+        )
+
+    def _encode_plane(self, x: torch.Tensor, pool_module: GatedAttentionPool) -> torch.Tensor:
+        B, K, C, H, W = x.shape
+        x_flat = x.view(B * K, C, H, W)
+        feats = self.encoder(x_flat)
+        if isinstance(feats, torch.Tensor) and feats.dim() > 2:
+            feats = feats.flatten(1)
+        feats = feats.view(B, K, self.feat_dim)
+        pooled, _ = pool_module(feats)
+        return pooled
+
+    def forward(
+        self,
+        sagittal: torch.Tensor,
+        coronal: torch.Tensor,
+        axial: torch.Tensor
+    ) -> torch.Tensor:
+        h_sag = self._encode_plane(sagittal, self.sag_pool)
+        h_cor = self._encode_plane(coronal, self.cor_pool)
+        h_ax = self._encode_plane(axial, self.ax_pool)
+
+        combined = torch.cat([h_sag, h_cor, h_ax], dim=1)
+
+        out_sag = self.sag_head(torch.cat([h_sag, combined], dim=1))
+        out_cor = self.cor_head(torch.cat([h_cor, combined], dim=1))
+        out_ax = self.ax_head(torch.cat([h_ax, combined], dim=1))
+        out_joint = self.joint_head(combined)
+
+        logits = torch.stack([
+            out_sag[:, 0],     # ACL
+            out_cor[:, 0],     # MCL
+            out_sag[:, 1],     # Medial Meniscus
+            out_sag[:, 2],     # Lateral Meniscus
+            out_joint[:, 0],   # Medial OA
+            out_joint[:, 1],   # Lateral OA
+            out_ax[:, 0],      # PF OA
+            out_ax[:, 1],      # Effusion
+            out_ax[:, 2],      # Synovitis
+            out_joint[:, 2],   # Baker's
+            out_joint[:, 3],   # Contusion
+            out_joint[:, 4],   # Fracture
+        ], dim=1)
+
+        return logits
+
+
 if __name__ == "__main__":
-    model = KneeAbnormalityClassifier(backbone_name="resnet34", pretrained=False)
+    model = KneeAnatomicalMoEClassifier(backbone_name="resnet34", pretrained=False)
     dummy_sag = torch.randn(2, 8, 3, 224, 224)
     dummy_cor = torch.randn(2, 8, 3, 224, 224)
     dummy_ax = torch.randn(2, 8, 3, 224, 224)
     out = model(dummy_sag, dummy_cor, dummy_ax)
     print("Model Output Shape:", out.shape)
+

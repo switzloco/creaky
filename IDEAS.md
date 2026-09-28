@@ -60,4 +60,22 @@ This backlog tracks novel, out-of-the-box ideas to explore during the iteration 
   - Feed 2.5D multi-slice keyframe montages or multi-image slice sequences into Gemma 4's native visual context window.
 - **Exploration Phase:** Phase 5 (Model Exploration & Iteration Sprint).
 
+---
+
+## 6. Vision-to-Report Translation + JEV Pipeline (Multimodal Radiologist Pipeline)
+- **Idea:** Pass multi-slice DICOM series into a compact local Multimodal Vision-Language Model (VLM) to generate detailed radiological findings / structured clinical descriptions, then feed that text directly into the calibrated Jev "System One" NLP parser (which already achieves 0.878 Macro AUC on text reports).
+- **Clinical & ML Rationale:** 
+  - Mirrors human radiologist workflow: $\text{DICOM Pixels} \xrightarrow{\text{Visual Inspection}} \text{Radiology Report} \xrightarrow{\text{Clinical Review}} \text{Diagnostic Scoring}$.
+  - Takes maximum advantage of our proven, highly accurate Jev NLP extractor on natural language.
+- **Challenges & Constraints:**
+  1. *Kaggle Sandbox Lock:* Submission runs with **Internet Disabled**. No external APIs (Gemini 1.5 Pro, GPT-4o) allowed at test time. Must run an open-weights VLM (e.g., Gemma 4 E2B, PaliGemma, or Florence-2) locally on a 16GB T4 GPU.
+  2. *Lossy Bottleneck & Compounding Errors:* Converting continuous pixel gradients to discrete language tokens can lose subtle visual signals (e.g. 2mm partial tears or faint subchondral edema). Total error compounds: $\text{Error}_{\text{Vision-to-Text}} + \text{Error}_{\text{Jev}}$.
+  3. *Inference Throughput:* Generating long text per patient across thousands of test studies can strain the Kaggle 9-hour inference window unless heavily quantized or batched.
+- **Refined Tournament Variations:**
+  - *Variation A (Direct Structured JSON VLM):* Prompt the local VLM to output structured JSON findings directly (`{"ACL": 0.95, "Medial Meniscus": 0.80}`) rather than narrative prose.
+  - *Variation B (BiomedCLIP Vision-Language Similarity):* Project MRI slice embeddings directly against clinical concept text embeddings (e.g. "Full thickness tear of anterior cruciate ligament") using dot-product similarity, bypassing text generation entirely.
+  - *Variation C (Auxiliary Report Supervision):* Train our vision backbone (ResNet/ConvNeXt) to predict Jev targets while simultaneously predicting report text embeddings as an auxiliary loss.
+- **Status:** Backlog / Alternative track. Priority remains on Fast Caching ($384 \times 384$) + Multi-backbone MoE ensembling.
+
+
 
