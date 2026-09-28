@@ -38,13 +38,13 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
 
 CONFIG = {
-    "backbone": "resnet34",
+    "backbone": "convnext_small",
     "pretrained": True,
     "epochs": 6,
     "batch_size": 4,
     "num_slices": 16,
     "target_size": (256, 256),
-    "lr": 2e-4,
+    "lr": 1e-4,
     "weight_decay": 1e-4,
     "dropout": 0.25,
     "label_smoothing": 0.03,
@@ -453,6 +453,21 @@ class KneeMRITrainingDataset(Dataset):
                     self.plane_col = col
                     break
 
+        # Check for pre-cached .npz dataset
+        self.cached_dir = None
+        for cand in [
+            "/kaggle/input/creaky-caching-dataset/cached_slices",
+            "/kaggle/input/creaky-caching-dataset",
+            "/kaggle/input/creaky-cached-slices",
+            "/kaggle/input/cached-slices",
+            "/kaggle/working/cached_slices",
+            "data/processed/cached_slices"
+        ]:
+            if os.path.isdir(cand):
+                self.cached_dir = cand
+                print(f"--> [Fast Mode] Using pre-cached slices from: {cand}")
+                break
+
     def __len__(self):
         return len(self.labels_df)
 
@@ -464,16 +479,10 @@ class KneeMRITrainingDataset(Dataset):
 
         # 1. Fast Path: Check for pre-cached .npz arrays
         cached_p = None
-        for cand in [
-            "/kaggle/input/creaky-cached-slices",
-            "/kaggle/input/cached-slices",
-            "/kaggle/working/cached_slices",
-            "data/processed/cached_slices"
-        ]:
-            check_p = os.path.join(cand, f"{study_uid}.npz")
+        if self.cached_dir:
+            check_p = os.path.join(self.cached_dir, f"{study_uid}.npz")
             if os.path.exists(check_p):
                 cached_p = check_p
-                break
 
         plane_tensors = {}
         if cached_p:

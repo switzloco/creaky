@@ -11,7 +11,9 @@
   "enable_internet": true,
   "keywords": [],
   "dataset_sources": [],
-  "kernel_sources": [],
+  "kernel_sources": [
+    "nswitzer/creaky-caching-dataset"
+  ],
   "competition_sources": [
     "rsna-knee-abnormality-detection"
   ],
