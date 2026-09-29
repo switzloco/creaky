@@ -1,772 +1,187 @@
-# RSNA Knee Abnormality Detection — Execution Plan
+# RSNA Knee Abnormality Detection — Plan (Sep 29 → Oct 22)
 
-> **Author:** Claude (strategist/planner)
-> **Executor:** Gemini 3.6 Flash
-> **Last Updated:** 2026-08-12
-> **Competition Deadline:** October 22, 2026
-
----
-
-## Table of Contents
-
-1. [Competition Overview](#1-competition-overview)
-2. [Project Structure](#2-project-structure)
-3. [Environment & Constraints](#3-environment--constraints)
-4. [Phase 1: Label Mining Pipeline](#4-phase-1-label-mining-pipeline)
-5. [Phase 2: DICOM Preprocessing](#5-phase-2-dicom-preprocessing)
-6. [Phase 3: Model Training](#6-phase-3-model-training)
-7. [Phase 4: Inference & Submission](#7-phase-4-inference--submission)
-8. [Phase 5: Iteration & Improvement](#8-phase-5-iteration--improvement)
-9. [Efficiency Track Strategy](#9-efficiency-track-strategy)
-10. [Timeline](#10-timeline)
-11. [Key Gotchas & Pitfalls](#11-key-gotchas--pitfalls)
+> **Last updated:** 2026-09-29
+> **Current best:** 0.882 public LB (ConvNeXt-Small anatomical MoE + ResNet, 0.7/0.3 weighted ensemble)
+> **Deadline:** 2026-10-22 (~3.5 weeks)
+> **Previous plan:** [`docs/archive/PLAN-2026-08-original.md`](docs/archive/PLAN-2026-08-original.md). It is kept for reference: its competition overview, data facts and gotchas still apply, but its architecture and timeline are out of date.
 
 ---
 
-## 1. Competition Overview
+## 1. Goals
 
-### What We're Building
-A multi-label classifier that takes knee MRI DICOM images and predicts the probability of **12 abnormalities** per study.
+There are two goals, and the plan is built so that each step works toward both.
 
-### The 12 Targets
-| # | Target | Description |
-|---|--------|-------------|
-| 1 | ACL | Anterior cruciate ligament tear |
-| 2 | MCL | Medial collateral ligament tear |
-| 3 | Medial Meniscus | Medial meniscus tear |
-| 4 | Lateral Meniscus | Lateral meniscus tear |
-| 5 | Medial OA | Medial compartment osteoarthritis |
-| 6 | Lateral OA | Lateral compartment osteoarthritis |
-| 7 | PF OA | Patellofemoral osteoarthritis |
-| 8 | Effusion | Joint fluid accumulation |
-| 9 | Synovitis | Inflammation of the synovial membrane |
-| 10 | Baker's | Baker's cyst (popliteal cyst) |
-| 11 | Contusion | Bone bruise / contusion |
-| 12 | Fracture | Bone fracture |
+### Goal A: Place as high as possible
+- **Main leaderboard:** macro AUC across the 12 targets.
+- **Efficiency track:** runtime divided by squared normalized score gain (see the original plan, section 9).
+- The final submissions are chosen on the evidence in the experiment log, not on public LB alone. The public LB is a sample of the test set and can mislead.
 
-### Data Facts
-- **4,407 training studies** — each has MRI DICOM images + a radiology report
-- **Only 58 studies** have expert-annotated ground-truth labels (the "gold standard")
-- **4,349 studies** have reports only — labels must be extracted via NLP/LLM
-- Reports are in **12 different languages** from 16 international sites
-- `test.csv` does **NOT** contain reports — final model must work from images alone
-- **Metric:** Macro-averaged AUC ROC across all 12 targets
+### Goal B: Understand the solution well
+The end state: **you can explain every part of the final pipeline and back each claim with a number.** In practice:
+- Every change is an **experiment with a written hypothesis**, recorded in `EXPERIMENTS.md` (format in section 4) *before* the result comes in.
+- Change **one thing at a time** where the GPU budget allows, so every score movement has a known cause. (The 0.882 commit changed backbone, batch size and ensemble weighting at once and listed a co-occurrence head that was never wired in, so we can't say what caused the gain.)
+- Each phase below ends with **"questions you should be able to answer"**. If you can't answer them, the phase isn't done, even if the score went up.
+- The project ends with a **writeup** (a Kaggle writeup and/or README) that explains the solution, what worked, what didn't, and why.
 
-### Key Insight
-> **This competition is won or lost on label quality.** The imaging model is important,
-> but the biggest differentiator is how accurately you extract training labels from
-> the radiology reports. Spend at least 40% of your effort here.
+### When the goals conflict
+- A change that raises the score for an unknown reason is **kept, but flagged** for an ablation before the final submission.
+- Moonshots from `IDEAS.md` are learning-only. They get time only after Phase 3 is done, or as a clearly bounded side project.
+- In the last 5 days (Oct 17–22), Goal A takes priority: no new ideas, only confirming, selecting and writing up.
 
 ---
 
-## 2. Project Structure
+## 2. Where things stand
 
-Create this exact directory structure:
+**What exists:**
+- **Labels:** 58 gold studies plus Jev report-derived ("silver") labels, embedded in the training notebook; the regex labeler is the fallback.
+- **Cache:** a 256px cache with 16 slices per plane and a 0.12–0.88 slice band (`scripts/preprocessing/cache_fast_slices.py`).
+- **Model:** `KneeAnatomicalMoEClassifier`, a shared backbone with gated attention pooling per plane and plane-specific heads (sagittal for ACL/menisci, coronal for MCL, axial for PF OA/effusion/synovitis, a joint head for the rest).
+- **Training:** a single split. All 58 gold studies plus 10% of silver are used for validation. 6 epochs, no augmentation.
+- **Submission:** reads raw DICOMs and runs the hardcoded 0.7/0.3 ensemble.
 
-```
-creaky/
-├── README.md                           # (exists)
-├── PLAN.md                             # (this file)
-├── LICENSE                             # (exists)
-├── requirements.txt                    # Python dependencies for local dev
-├── configs/
-│   └── experiment.yaml                 # Hyperparameters, paths, model config
-├── scripts/
-│   ├── label_mining/
-│   │   ├── __init__.py
-│   │   ├── regex_labeler.py            # Step 1A: Rule-based label extraction
-│   │   ├── llm_labeler.py             # Step 1B: LLM-based label extraction
-│   │   ├── label_validator.py         # Step 1C: Validate vs 58 gold labels
-│   │   └── assemble_labels.py         # Step 1D: Merge into final train_labels.csv
-│   ├── preprocessing/
-│   │   ├── __init__.py
-│   │   ├── dicom_to_png.py            # Step 2A: Convert DICOMs to PNGs
-│   │   ├── dicom_metadata.py          # Step 2B: Extract & organize DICOM metadata
-│   │   └── build_study_manifest.py    # Step 2C: Create study→series→slice manifest
-│   ├── training/
-│   │   ├── __init__.py
-│   │   ├── model.py                   # Step 3A: Model architecture
-│   │   ├── dataset.py                 # Step 3B: PyTorch Dataset
-│   │   ├── train.py                   # Step 3C: Training loop
-│   │   ├── losses.py                  # Step 3D: Loss functions
-│   │   └── augmentations.py           # Step 3E: Data augmentation
-│   └── utils/
-│       ├── __init__.py
-│       ├── metrics.py                 # AUC ROC computation
-│       └── kaggle_utils.py            # Path helpers for Kaggle vs local
-├── notebooks/
-│   ├── 00_eda.ipynb                   # Exploratory data analysis
-│   ├── 01_preprocess_dicoms.ipynb     # Kaggle notebook: DICOM → PNG dataset
-│   ├── 02_label_mining.ipynb          # Kaggle notebook: Reports → Labels
-│   ├── 03_train_model.ipynb           # Kaggle notebook: Model training
-│   └── 04_inference.ipynb             # Kaggle notebook: FINAL SUBMISSION
-└── tests/
-    ├── __init__.py
-    ├── test_regex_labeler.py           # Unit tests for regex extraction
-    └── test_metrics.py                 # Unit tests for AUC computation
-```
+**Known issues (from the Sep 29 review):**
 
----
-
-## 3. Environment & Constraints
-
-### Local Development (User's Machine)
-- **OS:** Windows
-- **Python:** Managed by `uv` — always use `uv run python` (never bare `python`)
-- **Shell:** cmd.exe only (no PowerShell)
-- **No admin rights** — local installs only (`npm install`, `uv pip install`)
-- **Node.js:** v24.14.0, npm 11.9.0 (on PATH)
-- **No proprietary data** — only Kaggle competition data
-
-### Kaggle Notebook Constraints
-- **GPU runtime:** ≤ 9 hours
-- **Internet:** DISABLED during submission
-- **Disk:** ~70 GB available during session, ~20 GB for saved output
-- **RAM:** ~30 GB (GPU notebooks) or ~16 GB (CPU)
-- **GPU:** T4 (16 GB VRAM) or P100 (16 GB) — Kaggle Pro may get dual T4
-- **Allowed:** Pre-trained models, public external data
-- **Output:** Must produce `submission.csv`
-
-### Python Dependencies (requirements.txt)
-```
-torch>=2.0
-torchvision>=0.15
-timm>=0.9                  # PyTorch Image Models (pretrained backbones)
-pydicom>=2.4               # DICOM reading (dev/testing)
-dicomsdl>=0.4              # Fast DICOM reading (inference)
-numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.3
-albumentations>=1.3        # Image augmentation
-opencv-python-headless>=4.8
-pyyaml>=6.0
-tqdm>=4.65
-matplotlib>=3.7            # EDA/visualization
-```
-
----
-
-## 4. Phase 1: Label Mining Pipeline
-
-> **Goal:** Convert 4,349 unstructured radiology reports (12 languages) into structured
-> binary labels for 12 findings. Validate against 58 gold-standard labels.
-
-### Step 1A: Regex/Lexicon Labeler
-
-**File:** `scripts/label_mining/regex_labeler.py`
-
-Build a rule-based system. For each of the 12 findings, create keyword sets:
-
-```python
-# Example structure — executor should expand these significantly
-FINDING_PATTERNS = {
-    "ACL": {
-        "positive": [
-            r"ACL\s+(tear|rupture|torn|disrupted|deficient|injured)",
-            r"anterior cruciate\s+(tear|rupture|torn|disrupted|injury)",
-            r"complete\s+ACL\s+(tear|rupture)",
-            r"partial\s+ACL\s+(tear|rupture)",
-        ],
-        "negative": [
-            r"ACL\s+(intact|normal|unremarkable)",
-            r"intact\s+ACL",
-            r"no\s+ACL\s+(tear|injury|abnormality)",
-            r"anterior cruciate\s+(intact|normal)",
-        ],
-    },
-    # ... repeat for all 12 findings
-}
-```
-
-**Key requirements:**
-1. Case-insensitive matching
-2. Handle negation: "no evidence of ACL tear" → `ACL = 0`
-3. Handle double negation: "cannot exclude ACL tear" → `ACL = UNK`
-4. Output a DataFrame with columns: `StudyInstanceUID` + 12 findings
-5. Each cell = `1.0` (positive), `0.0` (negative), or `NaN` (unknown/silent)
-6. This will ONLY work on English reports — that's expected. Non-English goes to LLM.
-
-**Negation detection strategy:**
-- Check for negation words within a 5-word window before the finding keyword
-- Negation words: "no", "not", "without", "absent", "negative", "unremarkable", "intact", "normal", "deny", "denies"
-- Hedging words that should map to UNK: "cannot exclude", "possible", "questionable", "equivocal", "indeterminate"
-
-### Step 1B: LLM-Based Labeler (Gemma 4 Strategy)
-
-**File:** `scripts/label_mining/llm_labeler.py`
-
-Use a state-of-the-art model, specifically **Gemma 4 (Latest Generation)**, to act as the primary offline label extractor for all reports. Older LLMs (like Gemma 2 or PaliGemma) lack the nuanced reasoning required for complex, multilingual medical text and implicit negation.
-
-**Prompt template & Strategy (Inspired by "Two Readers" Winning Notebook):**
-```
-You are an expert radiologist. Given the following knee MRI radiology report,
-extract the status for the 12 target findings.
-
-For each finding, respond with:
-- STATUS: "YES" (present), "NO" (absent/normal), or "UNK" (not mentioned/ambiguous)
-- CONFIDENCE: 0.0 to 1.0 (weight for the loss function so silent findings don't penalize)
-- SEVERITY: (Optional if present: mild, moderate, severe)
-
-Report:
-{report_text}
-
-Respond in structured JSON format.
-```
-
-**Implementation notes:**
-1. **Gemma 4:** Run Gemma 4 (via API or offline local generation) to parse the 4,349 unlabeled reports.
-2. **Confidence Weighting:** The extracted confidence scores will be used during training so that unmentioned findings ("UNK") have a lower weight in the loss function, avoiding penalization.
-3. **Offline Processing:** This step must be done *offline* or in a separate notebook. The final output (`report_labels.csv`) is uploaded as a Kaggle Dataset and mounted into the vision training notebook.
-4. Parse the JSON response; if parsing fails, retry up to 3 times with temperature=0.
-5. Also run against the 58 labeled reports for validation.
-
-**Important rule compliance note:**
-> The competition rules require that any external LLM/API used must comply with their
-> data security requirements. Enterprise/API configurations with no data retention are
-> recommended. Open-weights models (like Gemma 4) run locally are the safest option.
-
-### Step 1C: Label Validator
-
-**File:** `scripts/label_mining/label_validator.py`
-
-Compare your extracted labels against the 58 gold-standard expert labels.
-
-**Metrics to compute (per finding and overall):**
-- Accuracy
-- Sensitivity (recall) — critical: did we catch the positives?
-- Specificity — did we correctly identify negatives?
-- F1 score
-- Cohen's Kappa (inter-rater agreement)
-
-**Output:** A formatted report showing per-finding performance, plus confusion matrices.
-
-**Target:** ≥85% accuracy against gold labels before proceeding to image training.
-
-### Step 1D: Label Assembly
-
-**File:** `scripts/label_mining/assemble_labels.py`
-
-Merge regex and Gemma 4 labels into final training labels:
-
-**Merge strategy (priority order):**
-1. If the study has a gold-standard label → use it (58 studies, highest confidence)
-2. If regex and Gemma 4 agree → use the agreed label
-3. If they disagree → use the Gemma 4 label (it handles nuance better)
-4. If both are UNK → assign `0.5` (soft label expressing uncertainty) and apply a low confidence weight.
-5. Map YES → `1.0`, NO → `0.0`, UNK → `0.5`. Map the Gemma 4 confidence scores into sample weights.
-
-**Output:** `report_labels.csv` (or `train_labels.csv`) with columns:
-```
-StudyInstanceUID, ACL, MCL, Medial Meniscus, Lateral Meniscus, Medial OA,
-Lateral OA, PF OA, Effusion, Synovitis, Bakers, Contusion, Fracture,
-label_source (gold|regex|llm|soft),
-ACL_weight, MCL_weight, ... (confidence weights for the loss function)
-```
-
----
-
-## 5. Phase 2: DICOM Preprocessing
-
-> **Goal:** Convert raw DICOM images (~500 GB) into an efficient format (~30-50 GB)
-> that can be quickly loaded during training. This runs as a Kaggle notebook that
-> produces a Kaggle Dataset.
-
-### Step 2A: DICOM Metadata Extraction
-
-**File:** `scripts/preprocessing/dicom_metadata.py`
-
-For each DICOM file, extract and save:
-```python
-metadata_fields = [
-    "StudyInstanceUID",
-    "SeriesInstanceUID",
-    "SOPInstanceUID",       # unique slice ID
-    "InstanceNumber",       # slice ordering hint
-    "ImageOrientationPatient",  # 6 direction cosines
-    "ImagePositionPatient",     # 3D position (x,y,z)
-    "PixelSpacing",
-    "SliceThickness",
-    "Rows", "Columns",
-    "SeriesDescription",    # e.g. "SAG T2", "COR PD FS"
-    "MagneticFieldStrength",
-    "Manufacturer",
-    "WindowCenter", "WindowWidth",
-    "RescaleIntercept", "RescaleSlope",
-    "PhotometricInterpretation",
-    "BitsAllocated",
-]
-```
-
-**Output:** `study_metadata.parquet` — one row per DICOM slice
-
-### Step 2B: Study Manifest
-
-**File:** `scripts/preprocessing/build_study_manifest.py`
-
-Group slices into a hierarchical manifest:
-
-```python
-# Output structure:
-{
-    "study_uid_1": {
-        "series": [
-            {
-                "series_uid": "...",
-                "description": "SAG T2 FS",
-                "plane": "sagittal",        # inferred from ImageOrientationPatient
-                "num_slices": 30,
-                "slice_uids_ordered": [...], # sorted by spatial position
-            },
-            # ... more series
-        ]
-    }
-}
-```
-
-**Plane detection logic:**
-- Extract the `ImageOrientationPatient` (6 floats: row_x, row_y, row_z, col_x, col_y, col_z)
-- Compute the normal vector: `normal = cross(row_vec, col_vec)`
-- The dominant component of `normal` determines the plane:
-  - If `|normal_x|` is largest → **sagittal**
-  - If `|normal_y|` is largest → **coronal**
-  - If `|normal_z|` is largest → **axial**
-
-**Slice ordering logic:**
-- Compute `position_along_normal = dot(ImagePositionPatient, normal)`
-- Sort slices by this value
-
-### Step 2C: DICOM to PNG Conversion
-
-**File:** `scripts/preprocessing/dicom_to_png.py`
-
-This is the heavy-lifting step. Run as Kaggle notebook `01_preprocess_dicoms.ipynb`.
-
-**For each DICOM slice:**
-1. Read pixel data using `dicomsdl` (fast) with fallback to `pydicom`
-2. Apply rescale: `pixel = pixel * RescaleSlope + RescaleIntercept`
-3. Apply windowing (VOI LUT):
-   ```python
-   def apply_window(pixel_array, window_center, window_width):
-       lower = window_center - window_width / 2
-       upper = window_center + window_width / 2
-       pixel_array = np.clip(pixel_array, lower, upper)
-       pixel_array = ((pixel_array - lower) / (upper - lower) * 255).astype(np.uint8)
-       return pixel_array
-   ```
-   - If no window info in DICOM, use 1st/99th percentile of pixel values
-4. Resize to **384×384** (good balance of resolution vs memory)
-5. Save as PNG: `{study_uid}/{series_uid}/{slice_index:04d}.png`
-
-**Output:** Save as a Kaggle Dataset. Expect ~30-50 GB compressed.
-
-### Step 2D: Laterality Detection
-
-Determine if the MRI is of a left or right knee:
-- Use the x-coordinate of `ImagePositionPatient` for sagittal images
-- Positive x → patient's left side, Negative x → patient's right side
-- Add a `laterality` column to the manifest (useful for augmentation decisions)
-
----
-
-## 6. Phase 3: Model Training
-
-### Step 3A: Model Architecture
-
-**File:** `scripts/training/model.py`
-
-**Architecture: 2.5D CNN with Attention Pooling**
-
-```python
-import torch
-import torch.nn as nn
-import timm
-
-class SliceEncoder(nn.Module):
-    """Encodes individual 2D slices using a pretrained backbone."""
-    def __init__(self, backbone_name="efficientnet_b3", pretrained=True):
-        super().__init__()
-        self.backbone = timm.create_model(
-            backbone_name,
-            pretrained=pretrained,
-            in_chans=3,          # 2.5D: center slice + neighbors
-            num_classes=0,       # remove classification head
-            global_pool="avg",
-        )
-        self.feature_dim = self.backbone.num_features
-
-    def forward(self, x):
-        # x: (batch, 3, H, W) — 3 adjacent slices as RGB channels
-        return self.backbone(x)  # (batch, feature_dim)
-
-
-class AttentionPool(nn.Module):
-    """Attention-weighted pooling over a variable number of slice features."""
-    def __init__(self, feature_dim, hidden_dim=256):
-        super().__init__()
-        self.attention = nn.Sequential(
-            nn.Linear(feature_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, features, mask=None):
-        # features: (batch, num_slices, feature_dim)
-        # mask: (batch, num_slices) — True for valid slices
-        attn_weights = self.attention(features).squeeze(-1)  # (batch, num_slices)
-        if mask is not None:
-            attn_weights = attn_weights.masked_fill(~mask, float("-inf"))
-        attn_weights = torch.softmax(attn_weights, dim=1)
-        pooled = torch.einsum("bn,bnd->bd", attn_weights, features)
-        return pooled  # (batch, feature_dim)
-
-
-class KneeAbnormalityModel(nn.Module):
-    """Full model: per-series encoding → study-level classification."""
-    def __init__(self, backbone_name="efficientnet_b3", num_targets=12, max_series=6):
-        super().__init__()
-        self.slice_encoder = SliceEncoder(backbone_name)
-        self.attention_pool = AttentionPool(self.slice_encoder.feature_dim)
-        self.classifier = nn.Sequential(
-            nn.Linear(self.slice_encoder.feature_dim * max_series, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_targets),
-        )
-        self.max_series = max_series
-
-    def forward(self, series_slices, series_masks):
-        """
-        series_slices: list of (batch, num_slices, 3, H, W) — one per series
-        series_masks: list of (batch, num_slices) — one per series
-        """
-        series_embeddings = []
-        for slices, mask in zip(series_slices, series_masks):
-            B, N, C, H, W = slices.shape
-            # Encode all slices
-            flat = slices.view(B * N, C, H, W)
-            features = self.slice_encoder(flat)  # (B*N, D)
-            features = features.view(B, N, -1)   # (B, N, D)
-            # Attention pool
-            pooled = self.attention_pool(features, mask)  # (B, D)
-            series_embeddings.append(pooled)
-
-        # Pad to max_series if fewer series
-        D = series_embeddings[0].shape[-1]
-        while len(series_embeddings) < self.max_series:
-            series_embeddings.append(torch.zeros_like(series_embeddings[0]))
-
-        # Concat and classify
-        study_features = torch.cat(series_embeddings[:self.max_series], dim=-1)
-        logits = self.classifier(study_features)  # (B, 12)
-        return logits
-```
-
-**Why this architecture:**
-- **2.5D (3 adjacent slices as RGB):** Gives spatial context without 3D conv cost
-- **Attention pooling:** Different slices matter for different findings — ACL is best seen on specific sagittal slices, effusion on axial, etc.
-- **Per-series processing:** Each MRI series (sagittal, coronal, axial) sees different anatomy. Process them separately, then fuse.
-- **EfficientNet-B3:** Good accuracy/speed tradeoff. Can upgrade to B4 or ConvNeXt-Small if GPU budget allows.
-
-### Step 3B: Dataset
-
-**File:** `scripts/training/dataset.py`
-
-```python
-class KneeStudyDataset(torch.utils.data.Dataset):
-    """
-    Loads a knee MRI study as a set of series, each containing ordered slices.
-
-    For 2.5D: each "slice" is actually 3 adjacent slices stacked as RGB channels.
-    """
-
-    def __init__(self, manifest, labels_df, image_dir, transform=None,
-                 max_slices_per_series=32, max_series=6):
-        self.studies = list(manifest.keys())
-        self.manifest = manifest
-        self.labels = labels_df.set_index("StudyInstanceUID")
-        self.image_dir = image_dir
-        self.transform = transform
-        self.max_slices = max_slices_per_series
-        self.max_series = max_series
-        self.target_cols = [
-            "ACL", "MCL", "Medial Meniscus", "Lateral Meniscus",
-            "Medial OA", "Lateral OA", "PF OA", "Effusion",
-            "Synovitis", "Bakers", "Contusion", "Fracture"
-        ]
-
-    def __len__(self):
-        return len(self.studies)
-
-    def __getitem__(self, idx):
-        study_uid = self.studies[idx]
-        study_info = self.manifest[study_uid]
-        labels = self.labels.loc[study_uid, self.target_cols].values.astype(np.float32)
-
-        all_series_slices = []
-        all_series_masks = []
-
-        for series_info in study_info["series"][:self.max_series]:
-            slice_paths = series_info["slice_uids_ordered"]
-            # Sample or pad to max_slices
-            slices = self._load_series_slices(study_uid, series_info, slice_paths)
-            mask = torch.ones(len(slices), dtype=torch.bool)
-
-            # Pad if needed
-            if len(slices) < self.max_slices:
-                pad_count = self.max_slices - len(slices)
-                slices = torch.cat([slices, torch.zeros(pad_count, 3, 384, 384)])
-                mask = torch.cat([mask, torch.zeros(pad_count, dtype=torch.bool)])
-
-            all_series_slices.append(slices[:self.max_slices])
-            all_series_masks.append(mask[:self.max_slices])
-
-        return {
-            "series_slices": all_series_slices,
-            "series_masks": all_series_masks,
-            "targets": torch.tensor(labels),
-            "study_uid": study_uid,
-        }
-
-    def _load_series_slices(self, study_uid, series_info, slice_paths):
-        """Load slices and create 2.5D stacks (3 adjacent slices as channels)."""
-        images = []
-        for path in slice_paths:
-            img = cv2.imread(str(self.image_dir / study_uid / series_info["series_uid"] / path),
-                           cv2.IMREAD_GRAYSCALE)
-            images.append(img)
-
-        stacks = []
-        for i in range(len(images)):
-            prev_img = images[max(0, i-1)]
-            curr_img = images[i]
-            next_img = images[min(len(images)-1, i+1)]
-            stack = np.stack([prev_img, curr_img, next_img], axis=0)  # (3, H, W)
-            if self.transform:
-                stack = self.transform(stack)
-            stacks.append(torch.tensor(stack, dtype=torch.float32) / 255.0)
-
-        return torch.stack(stacks) if stacks else torch.zeros(1, 3, 384, 384)
-```
-
-### Step 3C: Training Loop
-
-**File:** `scripts/training/train.py`
-
-**Key training decisions:**
-
-| Parameter | Value | Rationale |
-|---|---|---|
-| Folds | 5-fold stratified | Stratify by `label_source` and label prevalence |
-| Backbone | EfficientNet-B3 | Good speed/accuracy tradeoff |
-| Optimizer | AdamW | Standard for medical imaging |
-| Learning rate | 1e-4 (backbone), 1e-3 (head) | Differential LR for pretrained vs new layers |
-| Scheduler | Cosine annealing with warmup (5 epochs) | Smooth convergence |
-| Loss | BCE with label smoothing (α=0.05) | Handles noisy labels from NLP |
-| Mixed precision | fp16 via `torch.cuda.amp` | 2x throughput on T4 |
-| Epochs | 15-20 | With early stopping on val AUC (patience=5) |
-| Batch size | 4 studies (limited by VRAM) | Accumulate gradients over 4 steps for effective BS=16 |
-| Augmentations | Horizontal flip, random rotation ±15°, brightness/contrast, elastic deform | Standard medical imaging augmentations |
-| Sampling | Oversample rare findings (Fracture, Baker's) | Balance class distribution |
-
-**Stratified K-Fold strategy:**
-- Use `MultilabelStratifiedKFold` from `iterstrat` package
-- This ensures each fold has similar label distributions across all 12 targets
-- Critical because some findings (Fracture, Baker's) may be rare
-
-**Training outputs:**
-- Save best model weights per fold: `fold_{i}_best.pth`
-- Save training logs: `fold_{i}_log.csv`
-- Save OOF (out-of-fold) predictions for ensemble calibration
-
-### Step 3D: Loss Function
-
-**File:** `scripts/training/losses.py`
-
-```python
-class SoftBCEWithLogitsLoss(nn.Module):
-    """
-    BCE loss that handles soft labels (0.5 for UNK).
-    Optionally applies label smoothing for noisy NLP-derived labels.
-    """
-    def __init__(self, label_smoothing=0.05, unk_weight=0.3):
-        super().__init__()
-        self.smoothing = label_smoothing
-        self.unk_weight = unk_weight  # downweight UNK samples
-
-    def forward(self, logits, targets):
-        # Apply label smoothing
-        targets_smooth = targets * (1 - self.smoothing) + 0.5 * self.smoothing
-
-        # Create weight mask: lower weight for soft-labeled (UNK=0.5) samples
-        weights = torch.ones_like(targets)
-        unk_mask = (targets == 0.5)
-        weights[unk_mask] = self.unk_weight
-
-        loss = F.binary_cross_entropy_with_logits(
-            logits, targets_smooth, weight=weights, reduction="mean"
-        )
-        return loss
-```
-
-### Step 3E: Augmentations
-
-**File:** `scripts/training/augmentations.py`
-
-Use `albumentations` library:
-```python
-import albumentations as A
-
-def get_train_transforms(image_size=384):
-    return A.Compose([
-        A.Resize(image_size, image_size),
-        A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5),
-        A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.3),
-        A.GaussNoise(var_limit=(5, 25), p=0.2),
-        A.ElasticTransform(alpha=50, sigma=10, p=0.1),
-    ])
-
-def get_val_transforms(image_size=384):
-    return A.Compose([
-        A.Resize(image_size, image_size),
-    ])
-```
-
-**Note on horizontal flip:** Only apply if you've normalized laterality in preprocessing.
-A left knee flipped looks like a right knee. If your model isn't laterality-aware, this is fine.
-If it is, be careful.
-
----
-
-## 7. Phase 4: Inference & Submission
-
-> **This is the notebook that gets submitted to Kaggle. It must run in ≤9 hours
-> with NO internet access.**
-
-### File: `notebooks/04_inference.ipynb`
-
-**Pipeline:**
-1. Load model weights from attached Kaggle Dataset (all 5 folds)
-2. Read test DICOM paths from `/kaggle/input/rsna-knee-abnormality-detection/test_dicom/`
-3. For each test study:
-   a. Read DICOM metadata → determine series/planes/ordering
-   b. Apply same preprocessing (window, rescale, resize to 384×384)
-   c. Create 2.5D stacks
-   d. Run through all 5 fold models
-   e. Average predictions across folds
-4. Output `submission.csv`:
-   ```
-   StudyInstanceUID,ACL,MCL,Medial Meniscus,Lateral Meniscus,Medial OA,Lateral OA,PF OA,Effusion,Synovitis,Baker's,Contusion,Fracture
-   ```
-
-**Speed optimizations for inference:**
-```python
-# Use these for faster inference:
-model.eval()
-model.half()                                    # fp16 inference
-torch.backends.cudnn.benchmark = True           # auto-tune convolutions
-torch.set_grad_enabled(False)                   # disable gradient tracking
-
-# Or use torch.compile for 10-30% speedup (PyTorch 2.0+):
-model = torch.compile(model, mode="reduce-overhead")
-```
-
-**Use `dicomsdl` for fast DICOM reads:**
-```python
-import dicomsdl
-dcm = dicomsdl.open(filepath)
-pixel_array = dcm.pixelData()
-# 5-10x faster than pydicom for batch reads
-```
-
----
-
-## 8. Phase 5: Iteration & Improvement
-
-After getting a baseline submission, iterate on these levers (in order of expected impact):
-
-### High Impact
-1. **Improve label quality** — Try different LLM prompts, use chain-of-thought, add language-specific regex patterns
-2. **Add more backbones** — EfficientNet-B4, ConvNeXt-Small, DINOv2 → ensemble for diversity
-3. **Series selection** — Instead of using all series, identify which plane is most informative for each finding (e.g., sagittal for ACL, axial for PF OA)
-
-### Medium Impact
-4. **Test-time augmentation (TTA)** — Horizontal flip + average predictions
-5. **Pseudo-labeling** — Use confident predictions on unlabeled data to retrain
-6. **Stacking/blending** — Train a lightweight model on top of OOF predictions
-
-### Lower Impact (but easy wins)
-7. **Threshold optimization** — Tune per-finding thresholds on validation set (though AUC is threshold-independent, this helps for tie-breaking)
-8. **Metadata features** — Scanner manufacturer, field strength, institution as auxiliary features
-9. **Post-processing** — Correlate findings (e.g., contusion + fracture often co-occur)
-
----
-
-## 9. Efficiency Track Strategy
-
-The efficiency score formula:
-$$\text{Efficiency} = \frac{T}{\left(\frac{S - S_{\text{baseline}}}{S_{\max} - S_{\text{baseline}}}\right)^2}$$
-
-Where $T$ = runtime in seconds, $S$ = your AUC score.
-
-**Key insight:** The denominator is *squared*, so a small improvement in AUC helps much more than the same proportional reduction in runtime.
-
-**Strategy for efficiency track:**
-| Optimization | Expected Impact |
-|---|---|
-| Single best fold instead of 5-fold ensemble | 5x faster, ~0.5% AUC loss |
-| `dicomsdl` instead of `pydicom` | 5-10x faster DICOM reads |
-| fp16 inference | ~2x GPU throughput |
-| `torch.compile()` | 10-30% inference speedup |
-| Smaller backbone (EfficientNet-B0) | 3x faster, ~1-2% AUC loss |
-| Reduce image size (256×256) | 2x faster, ~0.5% AUC loss |
-| Skip unnecessary series | Variable, up to 2-3x faster |
-
-**Recommendation:** Submit one "max accuracy" run (5-fold, B3, 384px) for main leaderboard,
-and one "efficiency" run (1-fold, B0, 256px, compiled) for efficiency track.
-
----
-
-## 10. Timeline
-
-| Week | Dates | Focus | Deliverable |
+| # | Issue | Where | Why it matters |
 |---|---|---|---|
-| 1 | Aug 12-18 | EDA + Regex labeler | `regex_labeler.py`, `00_eda.ipynb` |
-| 2 | Aug 19-25 | LLM labeler + validation | `llm_labeler.py`, `label_validator.py`, `train_labels.csv` |
-| 3 | Aug 26 - Sep 1 | DICOM preprocessing | `01_preprocess_dicoms.ipynb` → Kaggle Dataset |
-| 4 | Sep 2-8 | Model architecture + dataset | `model.py`, `dataset.py`, local smoke tests |
-| 5 | Sep 9-15 | First training run on Kaggle | `03_train_model.ipynb`, first fold trained |
-| 6 | Sep 16-22 | Full 5-fold training | All fold weights saved as Kaggle Dataset |
-| 7 | Sep 23-29 | First submission + debug | `04_inference.ipynb`, first leaderboard score |
-| 8 | Oct 1-7 | Label improvement + retrain | Improved labels, retrained models |
-| 9 | Oct 8-14 | Ensembling + efficiency track | Multi-backbone ensemble, efficiency submission |
-| 10 | Oct 15-22 | Final tuning + submission | Final submissions selected |
+| 1 | **Train/inference preprocessing mismatch.** Slice order (InstanceNumber vs physical position), slice range (central 76% vs full), 2.5D neighbours (sampled slices ~1/16 volume apart vs truly adjacent), rescale slope/intercept (not applied vs applied) | `cache_fast_slices.py` vs `submission_notebook.py:290-330` | The model is scored on inputs that look different from what it trained on. Probably the biggest lever available. |
+| 2 | Co-occurrence head exists only as a standalone test | `scripts/models/test_cooccurrence.py` | The 0.882 is being credited to the wrong change. |
+| 3 | `load_state_dict(strict=False)` and a silent fallback to resnet34 | `submission_notebook.py:597`, `:403` | A broken checkpoint still produces a submission, with random weights. |
+| 4 | Validation mixes gold and silver. Unscorable targets count as 0.5 in the average | `train_kaggle_notebook.py:724-748, 761-766` | Checkpoint choice and experiment verdicts are driven by noise. |
+| 5 | Ensemble weights fixed by backbone name | `submission_notebook.py:686` | Guessed rather than fitted. |
+| 6 | No augmentation, one fold, gold never used for training | training script | Leaves score behind. |
 
 ---
 
-## 11. Key Gotchas & Pitfalls
+## 3. Phases
 
-### Data Pitfalls
-- ⚠️ **Unlabeled ≠ Negative:** Empty cells in `train.csv` mean "no gold label", NOT "finding absent". This is the #1 mistake new participants make.
-- ⚠️ **Report language:** Reports are in 12 languages. English-only regex will miss ~40% of studies.
-- ⚠️ **DICOM slice ordering:** Filenames are random UUIDs. You MUST sort by spatial position using `ImageOrientationPatient` and `ImagePositionPatient`.
-- ⚠️ **Windowing:** Different MRI sequences need different windowing. Use the DICOM header values when available.
+Each phase lists **Do**, **Done when**, **Win** (what it does for Goal A), **Learn** (what it does for Goal B), and the questions you should be able to answer at the end.
 
-### Training Pitfalls
-- ⚠️ **Data leakage:** Never use report text at inference time — `test.csv` has no reports.
-- ⚠️ **Class imbalance:** Some findings (e.g., Fracture) may be very rare. Use weighted sampling or focal loss.
-- ⚠️ **Label noise:** NLP-derived labels WILL have errors. Use label smoothing and robust losses.
-- ⚠️ **Memory:** Each study has multiple series × dozens of slices. You cannot load everything into GPU memory. Process series sequentially.
+### Phase 0 — Make measurements trustworthy (Sep 29 – Oct 1)
+Nothing learned after this point means much unless this is done first.
 
-### Submission Pitfalls
-- ⚠️ **No internet:** Your inference notebook cannot download anything. All model weights must be attached as Kaggle Datasets.
-- ⚠️ **9-hour limit:** Profile your inference speed on a sample. If one study takes 30 seconds and there are 500 test studies, that's 4+ hours just for inference.
-- ⚠️ **Output format:** File must be named exactly `submission.csv` with exact column headers matching the sample submission.
-- ⚠️ **Missing predictions:** If you skip any StudyInstanceUID, you'll get an error. Predict for ALL test studies.
+**Do**
+1. Split the validation metric into **gold AUC** (58 studies) and **silver AUC** (held-out Jev labels), reported separately each epoch. Drop targets that have fewer than 2 classes from the mean and print how many were dropped, instead of scoring them as 0.5.
+2. Print per-target positive counts in the gold set, so you know which gold AUCs are based on 1–3 positives and aren't trustworthy.
+3. Submission: `strict=True` loading (or fail loudly on missing/unexpected keys), and no silent backbone fallback.
+4. Create `EXPERIMENTS.md` and backfill the rows you can reconstruct (0.803 run, 0.882 run).
+5. Save out-of-fold (OOF) predictions to disk with every training run, which later phases need.
 
-### Ethics & Compliance
-- ✅ Only use public competition data — no proprietary datasets
-- ✅ De-identified patient data — no PHI concerns
-- ✅ Open-source everything only if claiming a prize
-- ✅ Check employer IP agreement before claiming any prize money
+**Done when:** a training log shows gold and silver AUC side by side with the per-target counts, and a deliberately broken checkpoint makes the submission fail.
+
+**Win:** the scores you'll base decisions on become ones you can trust. **Learn:** how noisy a 58-sample AUC is.
+
+**Questions you should be able to answer:**
+- With *n* gold positives for Fracture, roughly how much could its AUC swing by chance?
+- Why can gold AUC and LB disagree?
+- Why is AUC unaffected by calibration, and when does that stop being true (averaging across models)?
+
+### Phase 1 — Fix the preprocessing mismatch (Oct 1 – Oct 5)
+
+**Do**
+1. Move slice selection and preprocessing into **one function** that the cache builder, the training fallback and the submission all call: physical-position ordering, one banding rule, rescale applied, 2.5D neighbours defined the same way everywhere.
+2. Choose the 2.5D neighbour definition on purpose. Either **adjacent slices** (cache stores idx±1 for each sampled slice, 48 slices per plane) or **sampled neighbours** (what training effectively does now). Adjacent is closer to the usual 2.5D setup; test it if the cache size allows.
+3. Add a **parity test**: run one training study through the cache path and the inference path and assert the tensors match.
+4. Rebuild the cache, retrain the current ConvNeXt config **with nothing else changed**, and submit.
+5. Side benefit for the efficiency track: inference then reads 16 (or 48) DICOMs per plane instead of all of them.
+
+**Done when:** the parity test passes and the new LB number is recorded in `EXPERIMENTS.md` next to 0.882.
+
+**Win:** possibly the largest single gain available. **Learn:** a controlled experiment on how much train/test skew costs.
+
+**Questions you should be able to answer:**
+- Which of the four differences mattered most? (Ablate one, if the GPU budget allows.)
+- Why does sorting by `InstanceNumber` sometimes disagree with physical position?
+- What does the model "see" in the neighbour channels?
+
+### Phase 2 — Standard gains: augmentation and folds (Oct 5 – Oct 12)
+
+**Do**
+1. Add light augmentation, applied the same way to all 16 slices of a plane: small shift/scale/rotate, brightness/contrast. **No horizontal flip** until laterality handling is understood (flipping swaps medial and lateral anatomy in coronal/axial views, which affects the medial/lateral targets).
+2. One run with augmentation versus Phase 1's run without it, same split, and log the result.
+3. Move to **K-fold** (3–5 depending on GPU hours; multilabel stratified on the silver labels). Check your remaining weekly Kaggle GPU quota before committing to 5.
+4. Fit the ensemble weights on OOF predictions (per target if they're stable, otherwise global), replacing the 0.7/0.3 guess.
+5. Final-candidate retrain includes the gold studies in training (use OOF or a silver hold-out for monitoring).
+
+**Done when:** a fold ensemble is submitted, and the ensemble weights come from OOF, not a guess.
+
+**Win:** augmentation and fold ensembling are the most reliable gains in Kaggle vision competitions. **Learn:** variance between folds, which is the error bar on every other experiment.
+
+**Questions you should be able to answer:**
+- How much does val AUC vary between folds? Is the gap between any two past experiments larger than that?
+- Why would a horizontal flip hurt Medial OA vs Lateral OA?
+- What does OOF mean, and why is fitting ensemble weights on it valid?
+
+### Phase 3 — Label quality (Oct 8 – Oct 15, overlaps Phase 2's GPU runs)
+The original plan called labels "the biggest differentiator". This is CPU/LLM work, so it runs while Phase 2 is training.
+
+**Do**
+1. Per-target agreement between Jev labels and the 58 gold labels: sensitivity, specificity, kappa. Rank the targets by how bad they are.
+2. For the worst 2–3 targets, read 10 disagreements by hand and sort them into causes (negation, language, hedging, missed synonym).
+3. Fix the top cause, re-measure against gold, retrain **one** fold, and compare.
+4. Try downweighting silver labels where Jev is uncertain (the loss already takes per-target weights), so the model trusts them less.
+
+**Done when:** you have a table of label agreement per target, and at least one label fix was tested end to end.
+
+**Win:** better labels for the targets where they're worst. **Learn:** how label noise turns into model error — the core lesson of weak supervision.
+
+**Questions you should be able to answer:**
+- Which targets are limited by the labels, and which by the images?
+- If silver labels are 85% accurate on a target, what's the rough ceiling on model AUC for that target?
+
+### Phase 4 — Architecture experiments (Oct 12 – Oct 17)
+These run only on top of the Phase 2 baseline, one change at a time.
+
+**Candidates, in priority order:**
+1. **Co-occurrence head** (`test_cooccurrence.py`): wire it in behind a config flag and ablate. First check the co-occurrence of positives in the silver labels; if the targets are mostly independent, expect little gain.
+2. **Resolution / slice count:** 256→320 px, or 16→24 slices, weighed against the time budget.
+3. **Second backbone for diversity** (EfficientNetV2-S already supported). It's worth keeping only if it raises the OOF ensemble score, not just its own score.
+
+**Done when:** each experiment you ran has an `EXPERIMENTS.md` row with a verdict. Negative results count.
+
+**Learn:** whether cross-target reasoning helps when the backbone already sees all planes. **Questions you should be able to answer:** Why would a diverse weak model improve an ensemble more than a strong but similar one?
+
+### Phase 5 — Efficiency submission (Oct 15 – Oct 19)
+
+**Do**
+- Single best fold, fp16, reading only the sampled slices (from Phase 1), optionally `torch.compile`.
+- Measure runtime per study and project the total over the test set.
+- Compute the efficiency score formula for 2–3 variants and pick the best on paper before submitting.
+
+**Learn:** the tradeoff between accuracy and speed. Because the score term is squared, a small AUC loss can outweigh a large speedup. Work out where the break-even point is.
+
+### Phase 6 — Final selection and writeup (Oct 19 – Oct 22)
+
+**Do**
+- Freeze the code on Oct 19. No new ideas after that.
+- Choose the final submissions from OOF and gold evidence, **not** just public LB: one "best evidence" submission and one "best public LB", if they differ. Check the competition rules for how many final submissions you can select.
+- Run the ablation for any gain still flagged "unknown cause" (see section 1), if time allows.
+- Write the writeup from `EXPERIMENTS.md`: pipeline diagram, what worked, what didn't, and what you'd do next.
+
+**Questions you should be able to answer:** everything above, in writing.
+
+---
+
+## 4. Experiment log format (`EXPERIMENTS.md`)
+
+One row per training run or submission. Fill in the hypothesis **before** the run.
+
+| ID | Date | Hypothesis | Change (one thing) | Gold AUC | Silver AUC | Fold spread | LB | Verdict | Lesson |
+|---|---|---|---|---|---|---|---|---|---|
+| E01 | 09-28 | ConvNeXt-S > ResNet backbone | backbone, bs, weighting (confounded) | ? | ? | – | 0.882 | kept, cause unclear | commit message credited a head that wasn't used |
+
+---
+
+## 5. Calendar
+
+| Dates | Main work | GPU runs |
+|---|---|---|
+| Sep 29 – Oct 1 | Phase 0: metrics, strict loading, log | none (code only) |
+| Oct 1 – Oct 5 | Phase 1: shared preprocessing, parity test | cache rebuild, 1 retrain, 1 submit |
+| Oct 5 – Oct 12 | Phase 2: augmentation, K-fold, OOF weights | aug ablation, 3–5 folds |
+| Oct 8 – Oct 15 | Phase 3: label audit and fixes (CPU) | 1 fold per label fix |
+| Oct 12 – Oct 17 | Phase 4: co-occurrence, resolution, diversity | 1 run per experiment |
+| Oct 15 – Oct 19 | Phase 5: efficiency variant | timing runs |
+| Oct 19 – Oct 22 | Phase 6: freeze, select, write up | final retrain only |
+
+## 6. Parked (not this month unless Phase 3 is done early)
+Everything in `IDEAS.md`: VLM report generation, 3D meshes, arthroscopy pretraining, DICOM metadata models. These are good for learning but unlikely to pay off before Oct 22. Revisit after the deadline, or take one on as a bounded side project if it's the thing you most want to learn.
