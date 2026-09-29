@@ -369,19 +369,42 @@ class KneeAnatomicalMoEClassifier(nn.Module):
     ):
         super().__init__()
         self.num_classes = num_classes
+        self.backbone_name = backbone_name
 
-        # ResNet Backbone
+        # Vision Backbone (ResNet, ConvNeXt, EfficientNet)
         try:
-            resnet = getattr(tv_models, backbone_name)(weights=None)
-            self.feat_dim = resnet.fc.in_features
-            resnet.fc = nn.Identity()
-            self.encoder = resnet
-        except Exception:
-            # Fallback encoder if named backbone fails
-            resnet = tv_models.resnet34(weights=None)
-            self.feat_dim = resnet.fc.in_features
-            resnet.fc = nn.Identity()
-            self.encoder = resnet
+            if backbone_name == "resnet34":
+                model = tv_models.resnet34(weights=None)
+                self.feat_dim = model.fc.in_features
+                model.fc = nn.Identity()
+                self.encoder = model
+            elif backbone_name == "resnet50":
+                model = tv_models.resnet50(weights=None)
+                self.feat_dim = model.fc.in_features
+                model.fc = nn.Identity()
+                self.encoder = model
+            elif backbone_name in ["convnext_tiny", "convnext_small"]:
+                factory = tv_models.convnext_small if backbone_name == "convnext_small" else tv_models.convnext_tiny
+                model = factory(weights=None)
+                self.feat_dim = model.classifier[2].in_features
+                model.classifier[2] = nn.Identity()
+                self.encoder = model
+            elif backbone_name in ["efficientnet_v2_s", "effnet"]:
+                model = tv_models.efficientnet_v2_s(weights=None)
+                self.feat_dim = model.classifier[1].in_features
+                model.classifier[1] = nn.Identity()
+                self.encoder = model
+            else:
+                model = getattr(tv_models, backbone_name)(weights=None)
+                self.feat_dim = model.fc.in_features
+                model.fc = nn.Identity()
+                self.encoder = model
+        except Exception as e:
+            print(f"Fallback to resnet34 backbone ({e})")
+            model = tv_models.resnet34(weights=None)
+            self.feat_dim = model.fc.in_features
+            model.fc = nn.Identity()
+            self.encoder = model
 
         self.sag_pool = GatedAttentionPool(self.feat_dim)
         self.cor_pool = GatedAttentionPool(self.feat_dim)
@@ -655,12 +678,16 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
         # Run Model Inference or Priors Fallback
         if models:
             ensemble_probs = []
+            weights = []
             with torch.no_grad():
                 for model in models:
                     logits = model(plane_tensors["Sagittal"], plane_tensors["Coronal"], plane_tensors["Axial"])
                     probs = torch.sigmoid(logits).cpu().numpy()[0]
-                    ensemble_probs.append(probs)
-            avg_probs = np.mean(ensemble_probs, axis=0)
+                    bb = getattr(model, "backbone_name", "")
+                    w = 0.70 if bb in ["convnext_small", "convnext_tiny"] else 0.30
+                    ensemble_probs.append(probs * w)
+                    weights.append(w)
+            avg_probs = np.sum(ensemble_probs, axis=0) / max(1e-6, sum(weights))
             for idx, target in enumerate(TARGET_COLS):
                 pred_dict[target] = float(np.clip(avg_probs[idx], 0.001, 0.999))
         else:

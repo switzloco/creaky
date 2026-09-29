@@ -6,6 +6,7 @@ Outputs best_model_fold_0.pt to /kaggle/working/
 """
 
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import sys
 import re
 import glob
@@ -41,7 +42,8 @@ CONFIG = {
     "backbone": "convnext_small",
     "pretrained": True,
     "epochs": 6,
-    "batch_size": 4,
+    "batch_size": 2,
+    "accum_steps": 2,
     "num_slices": 16,
     "target_size": (256, 256),
     "lr": 1e-4,
@@ -797,34 +799,42 @@ def run_training():
     output_dir = "/kaggle/working" if os.path.exists("/kaggle/working") else "checkpoints"
     os.makedirs(output_dir, exist_ok=True)
     best_ckpt_path = os.path.join(output_dir, "best_model_fold_0.pt")
+    accum_steps = CONFIG.get("accum_steps", 1)
 
     # 5. Epoch Loop
     print("\nStarting Training Loop...")
     for epoch in range(1, CONFIG["epochs"] + 1):
         model.train()
         train_loss = 0.0
+        optimizer.zero_grad()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{CONFIG['epochs']} [Train]")
-        for batch in pbar:
+        for step, batch in enumerate(pbar):
             sag = batch["sagittal"].to(device)
             cor = batch["coronal"].to(device)
             ax = batch["axial"].to(device)
             targets = batch["targets"].to(device)
             weights = batch["weights"].to(device)
 
-            optimizer.zero_grad()
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
                 logits = model(sag, cor, ax)
                 loss = criterion(logits, targets, weights=weights)
+                loss = loss / accum_steps
 
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
 
-            train_loss += loss.item()
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            if (step + 1) % accum_steps == 0 or (step + 1) == len(train_loader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+
+            train_loss += loss.item() * accum_steps
+            pbar.set_postfix({"loss": f"{loss.item() * accum_steps:.4f}"})
 
         scheduler.step()
         avg_train_loss = train_loss / max(1, len(train_loader))
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Validation
         model.eval()
@@ -839,6 +849,9 @@ def run_training():
                     probs = torch.sigmoid(logits).cpu().numpy()
                 val_preds.append(probs)
                 val_targets.append(batch["targets"].cpu().numpy())
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         y_true = np.vstack(val_targets)
         y_pred = np.vstack(val_preds)
