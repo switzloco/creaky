@@ -780,23 +780,23 @@ class WeightedBCEWithLogitsLoss(nn.Module):
 def compute_competition_metric(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, Dict[str, float]]:
     """Macro AUC over targets that have both classes present.
 
-    Targets with only one class (or none) among the binary labels are reported as NaN and
-    left out of the mean. Scoring them as 0.5 would pull the average toward chance and hide
-    how many targets were actually measured.
+    Binarizes labels at 0.5 threshold (handles both discrete 0/1 gold and continuous silver probabilities),
+    while excluding exact 0.5 unannotated soft-unknowns from evaluation. Targets with only one class
+    are reported as NaN and left out of the mean.
     """
     per_class = {}
     valid_aucs = []
     for i, col in enumerate(TARGET_COLS):
         yt = y_true[:, i]
         yp = y_pred[:, i]
-        # Only evaluate AUC on definitive binary ground-truth (0.0 or 1.0), excluding soft 0.5
-        mask = (yt == 0.0) | (yt == 1.0)
-        yt_bin = yt[mask]
-        yp_bin = yp[mask]
+        mask = (yt != 0.5)
+        yt_masked = yt[mask]
+        yp_masked = yp[mask]
+        yt_bin = (yt_masked >= 0.5).astype(int)
         auc = float("nan")
         if len(np.unique(yt_bin)) == 2:
             try:
-                auc = float(roc_auc_score(yt_bin, yp_bin))
+                auc = float(roc_auc_score(yt_bin, yp_masked))
                 valid_aucs.append(auc)
             except ValueError as e:  # e.g. NaN predictions from a diverged model
                 print(f"    [!] AUC failed for {col}: {e}")
@@ -806,9 +806,9 @@ def compute_competition_metric(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[
 
 
 def label_counts(y_true: np.ndarray) -> Dict[str, Tuple[int, int]]:
-    """(positives, negatives) per target, counting only definitive 0/1 labels."""
+    """(positives, negatives) per target, counting binary labels (>=0.5 positive, <0.5 negative, excluding 0.5)."""
     return {
-        col: (int((y_true[:, i] == 1.0).sum()), int((y_true[:, i] == 0.0).sum()))
+        col: (int((y_true[:, i] > 0.5).sum()), int((y_true[:, i] < 0.5).sum()))
         for i, col in enumerate(TARGET_COLS)
     }
 
@@ -1011,7 +1011,14 @@ def run_training():
         silver_auc, silver_per_class = float("nan"), {}
         if (~val_is_gold).any():
             silver_auc, silver_per_class = print_split_report("Silver", y_true[~val_is_gold], y_pred[~val_is_gold])
-        val_auc = silver_auc if select_metric == "silver" else gold_auc
+        primary_auc = silver_auc if select_metric == "silver" else gold_auc
+        val_auc = primary_auc
+        if np.isnan(val_auc):
+            fallback_metric = "gold" if select_metric == "silver" else "silver"
+            fallback_auc = gold_auc if select_metric == "silver" else silver_auc
+            if not np.isnan(fallback_auc):
+                print(f"  [Warning] {select_metric.capitalize()} AUC is NaN; falling back to {fallback_metric} AUC ({fallback_auc:.4f}) for selection.")
+                val_auc = fallback_auc
         print(f"  Selection ({select_metric}) AUC: {val_auc:.4f} (Best so far: {max(best_val_auc, 0.0):.4f})")
 
         if not np.isnan(val_auc) and val_auc > best_val_auc:

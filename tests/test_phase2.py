@@ -48,5 +48,46 @@ class TestPhase2(unittest.TestCase):
         out_no_aug = no_aug(tensor)
         self.assertTrue(torch.equal(out_no_aug, tensor))
 
+    def test_metric_continuous_and_discrete_labels(self):
+        from scripts.training.train_kaggle_notebook import compute_competition_metric, label_counts, TARGET_COLS
+        
+        # 1. Discrete labels (Gold format: 0.0, 1.0)
+        np.random.seed(42)
+        n = 100
+        y_gold = np.random.choice([0.0, 1.0], size=(n, 12), p=[0.7, 0.3])
+        # Model predictions: correlated with truth
+        y_pred = np.clip(y_gold + np.random.normal(0, 0.2, size=(n, 12)), 0.01, 0.99)
+        
+        macro_gold, per_class_gold = compute_competition_metric(y_gold, y_pred)
+        self.assertFalse(np.isnan(macro_gold))
+        self.assertGreater(macro_gold, 0.8)
+        
+        counts_gold = label_counts(y_gold)
+        for t in TARGET_COLS:
+            pos, neg = counts_gold[t]
+            self.assertEqual(pos + neg, n)
+
+        # 2. Continuous soft labels (Jev Silver format: e.g. 0.02, 0.98)
+        y_silver = np.random.choice([0.02, 0.98], size=(n, 12), p=[0.7, 0.3])
+        y_pred_silver = np.clip(y_silver + np.random.normal(0, 0.1, size=(n, 12)), 0.01, 0.99)
+        macro_silver, per_class_silver = compute_competition_metric(y_silver, y_pred_silver)
+        self.assertFalse(np.isnan(macro_silver))
+        self.assertGreater(macro_silver, 0.8)
+        
+        counts_silver = label_counts(y_silver)
+        for t in TARGET_COLS:
+            pos, neg = counts_silver[t]
+            self.assertEqual(pos + neg, n)
+
+        # 3. Soft unannotated 0.5 labels are excluded from evaluation
+        y_with_half = np.copy(y_gold)
+        y_with_half[:10, :] = 0.5  # 10 studies with 0.5
+        macro_half, _ = compute_competition_metric(y_with_half, y_pred)
+        self.assertFalse(np.isnan(macro_half))
+        counts_half = label_counts(y_with_half)
+        for t in TARGET_COLS:
+            pos, neg = counts_half[t]
+            self.assertEqual(pos + neg, n - 10)  # exactly 10 excluded
+
 if __name__ == "__main__":
     unittest.main()
