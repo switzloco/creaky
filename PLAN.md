@@ -16,6 +16,7 @@
 - **Solo, with a day job, kids and sports.** Time at the keyboard is short and broken up. GPU time is not the scarce resource; *your attention* is.
 - **First time in a competition this hard.**
 - **Everyone else has AI coding tools too.** Writing code fast is no longer an advantage.
+- **Compute options (Kaggle + free external credits):** Kaggle provides 30h/week of free T4/P100 (9h per run limit). If we need to run something Kaggle "can't handle" for free — like high-res 320–512px slices, heavy multi-fold backbone sweeps, or parallel multi-GPU training — we have access to **free Nebius AI Cloud credits** and/or **AMD Cloud credits** to burst compute externally for free and upload the checkpoint weights into Kaggle Models for inference.
 
 ### Where a solo competitor can still win
 Since everyone can generate code, the advantage comes from what AI tools don't do well by themselves:
@@ -126,7 +127,7 @@ Now that both sides match, improving the preprocessing itself is a normal experi
 ### Phase 4 — Architecture experiments (only if time allows)
 One at a time, on top of the Phase 2 baseline:
 1. **Co-occurrence head:** wire it in behind a config flag and ablate. First check whether the targets actually co-occur in the silver labels.
-2. **Resolution or slice count** (256→320 px, or 16→24 slices), weighed against runtime.
+2. **Resolution or slice count** (256→320 px, or 16→24 slices), weighed against runtime (can leverage Nebius/AMD free cloud credits if Kaggle T4 VRAM or 9h limit is exceeded).
 3. **Second backbone** (EfficientNetV2-S is already supported), kept only if it improves the ensemble.
 
 ### Phase 5 — Efficiency submission (only if time allows)
