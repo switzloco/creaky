@@ -1,6 +1,6 @@
 # RSNA Knee Abnormality Detection — Plan
 
-> **Current best:** 0.882 public LB (ConvNeXt-Small anatomical MoE + ResNet, 0.7/0.3 weighted ensemble)
+> **Current best:** 0.885 public LB (ConvNeXt-Small anatomical MoE + ResNet, 0.7/0.3 weighted ensemble with preprocessing parity fix)
 > **Deadline:** 2026-10-22
 > **Previous plan:** [`docs/archive/PLAN-2026-08-original.md`](docs/archive/PLAN-2026-08-original.md). It is kept for reference: its competition overview, data facts and gotchas still apply, but its architecture and timeline are out of date.
 
