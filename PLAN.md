@@ -1,32 +1,51 @@
-# RSNA Knee Abnormality Detection — Plan (Sep 29 → Oct 22)
+# RSNA Knee Abnormality Detection — Plan
 
-> **Last updated:** 2026-09-29
 > **Current best:** 0.882 public LB (ConvNeXt-Small anatomical MoE + ResNet, 0.7/0.3 weighted ensemble)
-> **Deadline:** 2026-10-22 (~3.5 weeks)
+> **Deadline:** 2026-10-22
 > **Previous plan:** [`docs/archive/PLAN-2026-08-original.md`](docs/archive/PLAN-2026-08-original.md). It is kept for reference: its competition overview, data facts and gotchas still apply, but its architecture and timeline are out of date.
 
 ---
 
-## 1. Goals
+## 1. Goals and constraints
 
-There are two goals, and the plan is built so that each step works toward both.
+### Priority: place as high as possible
+- **Main leaderboard:** macro AUC across the 12 targets. The efficiency track is a bonus if there's time.
+- Set a concrete target (e.g. top X%) once you've checked your current rank with `scripts/find_rank.py`.
 
-### Goal A: Place as high as possible
-- **Main leaderboard:** macro AUC across the 12 targets.
-- **Efficiency track:** runtime divided by squared normalized score gain (see the original plan, section 9).
-- The final submissions are chosen on the evidence in the experiment log, not on public LB alone. The public LB is a sample of the test set and can mislead.
+### Constraints this plan is built around
+- **Solo, with a day job, kids and sports.** Time at the keyboard is short and broken up. GPU time is not the scarce resource; *your attention* is.
+- **First time in a competition this hard.**
+- **Everyone else has AI coding tools too.** Writing code fast is no longer an advantage.
 
-### Goal B: Understand the solution well
-The end state: **you can explain every part of the final pipeline and back each claim with a number.** In practice:
-- Every change is an **experiment with a written hypothesis**, recorded in `EXPERIMENTS.md` (format in section 4) *before* the result comes in.
-- Change **one thing at a time** where the GPU budget allows, so every score movement has a known cause. (The 0.882 commit changed backbone, batch size and ensemble weighting at once and listed a co-occurrence head that was never wired in, so we can't say what caused the gain.)
-- Each phase below ends with **"questions you should be able to answer"**. If you can't answer them, the phase isn't done, even if the score went up.
-- The project ends with a **writeup** (a Kaggle writeup and/or README) that explains the solution, what worked, what didn't, and why.
+### Where a solo competitor can still win
+Since everyone can generate code, the advantage comes from what AI tools don't do well by themselves:
+1. **Correctness nobody checks.** The code that got 0.882 has a train/inference mismatch (section 2). Plausible code that's subtly wrong is common in AI-assisted entries. Catching these is a cheap gain.
+2. **Trustworthy validation.** Many teams overfit the public LB and drop when the private LB is revealed. Choosing final submissions on solid evidence protects against that.
+3. **Label quality.** Reading actual reports and disagreements is slow, human work that most teams skip.
 
-### When the goals conflict
-- A change that raises the score for an unknown reason is **kept, but flagged** for an ablation before the final submission.
-- Moonshots from `IDEAS.md` are learning-only. They get time only after Phase 3 is done, or as a clearly bounded side project.
-- In the last 5 days (Oct 17–22), Goal A takes priority: no new ideas, only confirming, selecting and writing up.
+**Learning is how you get there, not a separate goal.** You can only direct an AI tool well, and spot when it's confidently wrong, if you understand what the pipeline does. So:
+- Every change gets a one-line hypothesis in `EXPERIMENTS.md` before it runs, and the result afterwards.
+- Change one thing at a time when possible, so you know what moved the score.
+- Each phase lists a few **questions you should be able to answer**. They're short on purpose.
+
+### Value beyond the prize: sports medicine and med devices
+The prize is one payoff. The other is lasting knowledge and a portfolio in sports medicine and medical-device AI. **Whenever a task can also teach real domain knowledge, take that opportunity.** In practice:
+- **Choose the version of a task that teaches domain knowledge.** The Phase 3 label audit means reading real knee MRI reports: how radiologists describe ACL and meniscal tears, bone bruises, effusion. Per-target error analysis shows which injuries are hard to see on which plane, and why. That is sports-medicine imaging knowledge, not just Kaggle knowledge.
+- **Keep a short `DOMAIN_NOTES.md`** for things learned along the way: anatomy, injury patterns, what each MRI plane and sequence shows, how reports are phrased across languages. A few lines at a time is enough.
+- **Think like a med-device builder when evaluating.** Imaging AI products are judged on per-finding sensitivity/specificity, performance across sites and scanners, and failure modes — not one leaderboard number. Reporting results that way (per target, per site if metadata allows) is better science and the language that clinical and med-device people use.
+- **The writeup is a portfolio piece.** A clear public writeup and code (not the data — the competition license forbids redistributing it) is what shows sports-medicine or med-device teams you can do this work.
+- **After the deadline**, the parked `IDEAS.md` items with the most domain value (3D knee morphometrics, arthroscopy correlation) are good candidates to pursue for learning and portfolio reasons.
+
+### Working rhythm (fits around a busy week)
+- **Short session (15–30 min):** read the last run's log, fill in the `EXPERIMENTS.md` row, launch the next run. Every run is set up so it can go unattended overnight or during the workday.
+- **Longer session (weekend):** anything that needs thinking — reviewing code changes, the label audit, choosing final submissions.
+- **Claude does the code changes between sessions**, each one small, reviewed and tested, so your time goes to decisions rather than typing.
+
+### Rules for the tradeoffs
+- A change that raises the score for an unknown reason is kept, but flagged for an ablation before the final submission.
+- `IDEAS.md` moonshots stay parked until after the deadline.
+- Near the end: no new ideas, only confirming, selecting and writing up.
+- If time runs short, drop phases from the bottom of the list. Phases 0–2 are the ones that matter.
 
 ---
 
@@ -39,149 +58,93 @@ The end state: **you can explain every part of the final pipeline and back each 
 - **Training:** a single split. All 58 gold studies plus 10% of silver are used for validation. 6 epochs, no augmentation.
 - **Submission:** reads raw DICOMs and runs the hardcoded 0.7/0.3 ensemble.
 
-**Known issues (from the Sep 29 review):**
+**Known issues (from the first review):**
 
 | # | Issue | Where | Why it matters |
 |---|---|---|---|
-| 1 | **Train/inference preprocessing mismatch.** Slice order (InstanceNumber vs physical position), slice range (central 76% vs full), 2.5D neighbours (sampled slices ~1/16 volume apart vs truly adjacent), rescale slope/intercept (not applied vs applied) | `cache_fast_slices.py` vs `submission_notebook.py:290-330` | The model is scored on inputs that look different from what it trained on. Probably the biggest lever available. |
+| 1 | **Train/inference preprocessing mismatch.** Slice order (InstanceNumber vs physical position), slice range (central 76% vs full), 2.5D neighbours (sampled slices ~1/16 volume apart vs truly adjacent), rescale slope/intercept (not applied vs applied) | `cache_fast_slices.py` vs `submission_notebook.py` `load_and_preprocess_series` | The model is scored on inputs that look different from what it trained on. Probably the biggest lever available. |
 | 2 | Co-occurrence head exists only as a standalone test | `scripts/models/test_cooccurrence.py` | The 0.882 is being credited to the wrong change. |
-| 3 | `load_state_dict(strict=False)` and a silent fallback to resnet34 | `submission_notebook.py:597`, `:403` | A broken checkpoint still produces a submission, with random weights. |
-| 4 | Validation mixes gold and silver. Unscorable targets count as 0.5 in the average | `train_kaggle_notebook.py:724-748, 761-766` | Checkpoint choice and experiment verdicts are driven by noise. |
-| 5 | Ensemble weights fixed by backbone name | `submission_notebook.py:686` | Guessed rather than fitted. |
+| 3 | `load_state_dict(strict=False)` and a silent fallback to resnet34 | submission notebook | A broken checkpoint still produces a submission, with random weights. |
+| 4 | Validation mixes gold and silver. Unscorable targets count as 0.5 in the average | `compute_competition_metric`, `run_training` | Checkpoint choice and experiment verdicts are driven by noise. |
+| 5 | Ensemble weights fixed by backbone name | submission notebook | Guessed rather than fitted. |
 | 6 | No augmentation, one fold, gold never used for training | training script | Leaves score behind. |
 
 ---
 
-## 3. Phases
+## 3. Phases, in order
 
-Each phase lists **Do**, **Done when**, **Win** (what it does for Goal A), **Learn** (what it does for Goal B), and the questions you should be able to answer at the end.
+### Phase 0 — Make measurements trustworthy
+*Code only, no GPU. Claude does it; you review it in one session.*
 
-### Phase 0 — Make measurements trustworthy (Sep 29 – Oct 1)
-Nothing learned after this point means much unless this is done first.
+1. Validation reports **gold AUC** (58 studies) and **silver AUC** (held-out Jev labels) separately. Targets with only one class are left out of the average (and the count printed) instead of being scored as 0.5.
+2. Per-target positive counts in the gold set are printed, so you can see which gold AUCs rest on 1–3 positives.
+3. Checkpoint selection uses silver AUC. It has far more studies, so it's less noisy; gold AUC is reported alongside it.
+4. Validation predictions of the best epoch are saved to disk, which later phases need for fitting ensemble weights.
+5. The submission loads checkpoints strictly and fails loudly on a mismatched or unknown backbone, instead of silently running random weights.
+6. `EXPERIMENTS.md` is created and backfilled.
 
-**Do**
-1. Split the validation metric into **gold AUC** (58 studies) and **silver AUC** (held-out Jev labels), reported separately each epoch. Drop targets that have fewer than 2 classes from the mean and print how many were dropped, instead of scoring them as 0.5.
-2. Print per-target positive counts in the gold set, so you know which gold AUCs are based on 1–3 positives and aren't trustworthy.
-3. Submission: `strict=True` loading (or fail loudly on missing/unexpected keys), and no silent backbone fallback.
-4. Create `EXPERIMENTS.md` and backfill the rows you can reconstruct (0.803 run, 0.882 run).
-5. Save out-of-fold (OOF) predictions to disk with every training run, which later phases need.
+**Status:** code done (items 1–6). Remaining: one training run to produce the E02 baseline in `EXPERIMENTS.md`.
 
-**Done when:** a training log shows gold and silver AUC side by side with the per-target counts, and a deliberately broken checkpoint makes the submission fail.
+**Done when:** the next training log shows gold and silver AUC side by side.
+**Questions you should be able to answer:** with only a handful of gold positives for a target, how far could its AUC swing by chance? Why can gold AUC and LB disagree?
 
-**Win:** the scores you'll base decisions on become ones you can trust. **Learn:** how noisy a 58-sample AUC is.
+### Phase 1 — Fix the preprocessing mismatch
+*Claude writes the code; you launch the cache rebuild and one retrain (two unattended runs).*
 
-**Questions you should be able to answer:**
-- With *n* gold positives for Fracture, roughly how much could its AUC swing by chance?
-- Why can gold AUC and LB disagree?
-- Why is AUC unaffected by calibration, and when does that stop being true (averaging across models)?
+1. One shared function for slice selection and preprocessing, used by the cache, the training fallback and the submission: physical-position ordering, one banding rule, rescale applied, 2.5D neighbours defined the same way everywhere.
+2. A **parity test**: one study through the cache path and the inference path must give the same tensors.
+3. Rebuild the cache, retrain the current ConvNeXt config **with nothing else changed**, submit, and log it next to 0.882.
+4. Side benefit: inference reads only the sampled slices instead of every DICOM, which is much faster.
 
-### Phase 1 — Fix the preprocessing mismatch (Oct 1 – Oct 5)
+**Questions you should be able to answer:** what are the four differences, and why would each confuse the model? Why can `InstanceNumber` order differ from physical position?
 
-**Do**
-1. Move slice selection and preprocessing into **one function** that the cache builder, the training fallback and the submission all call: physical-position ordering, one banding rule, rescale applied, 2.5D neighbours defined the same way everywhere.
-2. Choose the 2.5D neighbour definition on purpose. Either **adjacent slices** (cache stores idx±1 for each sampled slice, 48 slices per plane) or **sampled neighbours** (what training effectively does now). Adjacent is closer to the usual 2.5D setup; test it if the cache size allows.
-3. Add a **parity test**: run one training study through the cache path and the inference path and assert the tensors match.
-4. Rebuild the cache, retrain the current ConvNeXt config **with nothing else changed**, and submit.
-5. Side benefit for the efficiency track: inference then reads 16 (or 48) DICOMs per plane instead of all of them.
+### Phase 2 — Standard gains: augmentation and folds
+*Several unattended runs; about one short session each.*
 
-**Done when:** the parity test passes and the new LB number is recorded in `EXPERIMENTS.md` next to 0.882.
+1. Light augmentation, applied the same way to all slices of a plane: small shift/scale/rotate, brightness/contrast. **No horizontal flip** yet (flipping swaps medial and lateral anatomy, which affects the medial/lateral targets). One run with it versus one without, and log the result.
+2. **K-fold** (3–5 depending on your remaining weekly Kaggle GPU quota), multilabel-stratified on the silver labels. Each fold is a separate run you can launch and leave.
+3. Fit the ensemble weights on the saved validation predictions, replacing the 0.7/0.3 guess.
+4. Retrain the final candidate with the gold studies included in training.
 
-**Win:** possibly the largest single gain available. **Learn:** a controlled experiment on how much train/test skew costs.
+**Questions you should be able to answer:** how much does val AUC vary between folds, and was any earlier "improvement" smaller than that?
 
-**Questions you should be able to answer:**
-- Which of the four differences mattered most? (Ablate one, if the GPU budget allows.)
-- Why does sorting by `InstanceNumber` sometimes disagree with physical position?
-- What does the model "see" in the neighbour channels?
+### Phase 3 — Label quality
+*CPU work that runs while Phase 2 is training; a good weekend session.*
 
-### Phase 2 — Standard gains: augmentation and folds (Oct 5 – Oct 12)
+1. Per-target agreement between Jev labels and the 58 gold labels. Rank the targets from worst to best.
+2. For the worst 2–3 targets, read ~10 disagreements and sort them by cause (negation, language, hedging, missed synonym).
+3. Fix the top cause, re-measure against gold, retrain one fold, compare.
 
-**Do**
-1. Add light augmentation, applied the same way to all 16 slices of a plane: small shift/scale/rotate, brightness/contrast. **No horizontal flip** until laterality handling is understood (flipping swaps medial and lateral anatomy in coronal/axial views, which affects the medial/lateral targets).
-2. One run with augmentation versus Phase 1's run without it, same split, and log the result.
-3. Move to **K-fold** (3–5 depending on GPU hours; multilabel stratified on the silver labels). Check your remaining weekly Kaggle GPU quota before committing to 5.
-4. Fit the ensemble weights on OOF predictions (per target if they're stable, otherwise global), replacing the 0.7/0.3 guess.
-5. Final-candidate retrain includes the gold studies in training (use OOF or a silver hold-out for monitoring).
+**Questions you should be able to answer:** which targets are limited by the labels, and which by the images?
 
-**Done when:** a fold ensemble is submitted, and the ensemble weights come from OOF, not a guess.
+### Phase 4 — Architecture experiments (only if time allows)
+One at a time, on top of the Phase 2 baseline:
+1. **Co-occurrence head:** wire it in behind a config flag and ablate. First check whether the targets actually co-occur in the silver labels.
+2. **Resolution or slice count** (256→320 px, or 16→24 slices), weighed against runtime.
+3. **Second backbone** (EfficientNetV2-S is already supported), kept only if it improves the ensemble.
 
-**Win:** augmentation and fold ensembling are the most reliable gains in Kaggle vision competitions. **Learn:** variance between folds, which is the error bar on every other experiment.
+### Phase 5 — Efficiency submission (only if time allows)
+Single best fold, fp16, sampled slices only. Measure runtime per study, compute the efficiency score for 2–3 variants on paper, submit the best.
 
-**Questions you should be able to answer:**
-- How much does val AUC vary between folds? Is the gap between any two past experiments larger than that?
-- Why would a horizontal flip hurt Medial OA vs Lateral OA?
-- What does OOF mean, and why is fitting ensemble weights on it valid?
-
-### Phase 3 — Label quality (Oct 8 – Oct 15, overlaps Phase 2's GPU runs)
-The original plan called labels "the biggest differentiator". This is CPU/LLM work, so it runs while Phase 2 is training.
-
-**Do**
-1. Per-target agreement between Jev labels and the 58 gold labels: sensitivity, specificity, kappa. Rank the targets by how bad they are.
-2. For the worst 2–3 targets, read 10 disagreements by hand and sort them into causes (negation, language, hedging, missed synonym).
-3. Fix the top cause, re-measure against gold, retrain **one** fold, and compare.
-4. Try downweighting silver labels where Jev is uncertain (the loss already takes per-target weights), so the model trusts them less.
-
-**Done when:** you have a table of label agreement per target, and at least one label fix was tested end to end.
-
-**Win:** better labels for the targets where they're worst. **Learn:** how label noise turns into model error — the core lesson of weak supervision.
-
-**Questions you should be able to answer:**
-- Which targets are limited by the labels, and which by the images?
-- If silver labels are 85% accurate on a target, what's the rough ceiling on model AUC for that target?
-
-### Phase 4 — Architecture experiments (Oct 12 – Oct 17)
-These run only on top of the Phase 2 baseline, one change at a time.
-
-**Candidates, in priority order:**
-1. **Co-occurrence head** (`test_cooccurrence.py`): wire it in behind a config flag and ablate. First check the co-occurrence of positives in the silver labels; if the targets are mostly independent, expect little gain.
-2. **Resolution / slice count:** 256→320 px, or 16→24 slices, weighed against the time budget.
-3. **Second backbone for diversity** (EfficientNetV2-S already supported). It's worth keeping only if it raises the OOF ensemble score, not just its own score.
-
-**Done when:** each experiment you ran has an `EXPERIMENTS.md` row with a verdict. Negative results count.
-
-**Learn:** whether cross-target reasoning helps when the backbone already sees all planes. **Questions you should be able to answer:** Why would a diverse weak model improve an ensemble more than a strong but similar one?
-
-### Phase 5 — Efficiency submission (Oct 15 – Oct 19)
-
-**Do**
-- Single best fold, fp16, reading only the sampled slices (from Phase 1), optionally `torch.compile`.
-- Measure runtime per study and project the total over the test set.
-- Compute the efficiency score formula for 2–3 variants and pick the best on paper before submitting.
-
-**Learn:** the tradeoff between accuracy and speed. Because the score term is squared, a small AUC loss can outweigh a large speedup. Work out where the break-even point is.
-
-### Phase 6 — Final selection and writeup (Oct 19 – Oct 22)
-
-**Do**
-- Freeze the code on Oct 19. No new ideas after that.
-- Choose the final submissions from OOF and gold evidence, **not** just public LB: one "best evidence" submission and one "best public LB", if they differ. Check the competition rules for how many final submissions you can select.
-- Run the ablation for any gain still flagged "unknown cause" (see section 1), if time allows.
-- Write the writeup from `EXPERIMENTS.md`: pipeline diagram, what worked, what didn't, and what you'd do next.
-
-**Questions you should be able to answer:** everything above, in writing.
+### Phase 6 — Final selection and writeup
+- Freeze the code a few days before the deadline.
+- Choose final submissions on validation evidence, **not** just public LB: one "best evidence", one "best public LB" if they differ. Check the competition rules for how many you can select.
+- Run any pending ablations for gains flagged "unknown cause", if time allows.
+- A short writeup from `EXPERIMENTS.md`: what worked, what didn't, and why.
 
 ---
 
-## 4. Experiment log format (`EXPERIMENTS.md`)
+## 4. Order of work at a glance
 
-One row per training run or submission. Fill in the hypothesis **before** the run.
+| Step | Main work | Your time | GPU runs |
+|---|---|---|---|
+| 0 | Metrics, strict loading, experiment log | 1 review session | none |
+| 1 | Shared preprocessing, parity test, retrain | 2 short sessions | cache rebuild + 1 retrain |
+| 2 | Augmentation, K-fold, fitted ensemble weights | 1 short session per run | aug ablation + 3–5 folds |
+| 3 | Label audit and fixes (overlaps step 2) | 1 weekend session | 1 fold per fix |
+| 4 | Co-occurrence, resolution, second backbone (optional) | 1 short session per run | 1 run per experiment |
+| 5 | Efficiency variant (optional) | 1 short session | timing runs |
+| 6 | Freeze, select, write up | 1 weekend session | final retrain only |
 
-| ID | Date | Hypothesis | Change (one thing) | Gold AUC | Silver AUC | Fold spread | LB | Verdict | Lesson |
-|---|---|---|---|---|---|---|---|---|---|
-| E01 | 09-28 | ConvNeXt-S > ResNet backbone | backbone, bs, weighting (confounded) | ? | ? | – | 0.882 | kept, cause unclear | commit message credited a head that wasn't used |
-
----
-
-## 5. Calendar
-
-| Dates | Main work | GPU runs |
-|---|---|---|
-| Sep 29 – Oct 1 | Phase 0: metrics, strict loading, log | none (code only) |
-| Oct 1 – Oct 5 | Phase 1: shared preprocessing, parity test | cache rebuild, 1 retrain, 1 submit |
-| Oct 5 – Oct 12 | Phase 2: augmentation, K-fold, OOF weights | aug ablation, 3–5 folds |
-| Oct 8 – Oct 15 | Phase 3: label audit and fixes (CPU) | 1 fold per label fix |
-| Oct 12 – Oct 17 | Phase 4: co-occurrence, resolution, diversity | 1 run per experiment |
-| Oct 15 – Oct 19 | Phase 5: efficiency variant | timing runs |
-| Oct 19 – Oct 22 | Phase 6: freeze, select, write up | final retrain only |
-
-## 6. Parked (not this month unless Phase 3 is done early)
-Everything in `IDEAS.md`: VLM report generation, 3D meshes, arthroscopy pretraining, DICOM metadata models. These are good for learning but unlikely to pay off before Oct 22. Revisit after the deadline, or take one on as a bounded side project if it's the thing you most want to learn.
+## 5. Parked
+Everything in `IDEAS.md`: VLM report generation, 3D meshes, arthroscopy pretraining, DICOM metadata models. Good for learning, unlikely to pay off before the deadline. Revisit afterwards, starting with the ones that teach the most sports medicine (3D morphometrics, arthroscopy correlation).
