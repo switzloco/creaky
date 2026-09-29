@@ -400,11 +400,8 @@ class KneeAnatomicalMoEClassifier(nn.Module):
                 model.fc = nn.Identity()
                 self.encoder = model
         except Exception as e:
-            print(f"Fallback to resnet34 backbone ({e})")
-            model = tv_models.resnet34(weights=None)
-            self.feat_dim = model.fc.in_features
-            model.fc = nn.Identity()
-            self.encoder = model
+            # No silent fallback: a substitute backbone would run with random weights.
+            raise RuntimeError(f"Could not build backbone '{backbone_name}': {e}") from e
 
         self.sag_pool = GatedAttentionPool(self.feat_dim)
         self.cor_pool = GatedAttentionPool(self.feat_dim)
@@ -594,12 +591,18 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
                 else:
                     model = LegacyKneeClassifier().to(device)
 
-                model.load_state_dict(sd, strict=False)
+                # strict=True: any missing/unexpected key means the architecture doesn't match
+                # the checkpoint, and part of the model would run with random weights.
+                model.load_state_dict(sd, strict=True)
                 model.eval()
                 models.append(model)
                 print(f"  Loaded model from: {ckpt_path} (MoE: {is_moe}, Backbone: {bb})")
             except Exception as e:
-                print(f"  Warning: Failed to load {ckpt_path}: {e}")
+                raise RuntimeError(f"Failed to load checkpoint {ckpt_path}: {e}") from e
+
+    if not models and os.path.exists("/kaggle/input"):
+        # On Kaggle, submitting class priors would score ~0.5 AUC without any error.
+        raise RuntimeError("No model checkpoints found under /kaggle/input. Attach the trained model before submitting.")
 
 
     submission_rows = []

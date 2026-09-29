@@ -52,6 +52,9 @@ CONFIG = {
     "label_smoothing": 0.03,
     "num_workers": 2,
     "max_train_studies": None,  # Set e.g. 500 for quick test, or None for full dataset
+    # Which validation AUC picks the best checkpoint: "silver" (held-out Jev labels, ~10x more
+    # studies, less noisy) or "gold" (58 expert-labelled studies). Both are always reported.
+    "select_metric": "silver",
 }
 
 
@@ -722,6 +725,12 @@ class WeightedBCEWithLogitsLoss(nn.Module):
         return bce.mean()
 
 def compute_competition_metric(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, Dict[str, float]]:
+    """Macro AUC over targets that have both classes present.
+
+    Targets with only one class (or none) among the binary labels are reported as NaN and
+    left out of the mean. Scoring them as 0.5 would pull the average toward chance and hide
+    how many targets were actually measured.
+    """
     per_class = {}
     valid_aucs = []
     for i, col in enumerate(TARGET_COLS):
@@ -731,17 +740,38 @@ def compute_competition_metric(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[
         mask = (yt == 0.0) | (yt == 1.0)
         yt_bin = yt[mask]
         yp_bin = yp[mask]
-        classes = np.unique(yt_bin)
-        if len(classes) < 2:
-            auc = 0.5
-        else:
+        auc = float("nan")
+        if len(np.unique(yt_bin)) == 2:
             try:
                 auc = float(roc_auc_score(yt_bin, yp_bin))
-            except Exception:
-                auc = 0.5
-        per_class[col] = float(auc)
-        valid_aucs.append(auc)
-    return float(np.mean(valid_aucs)), per_class
+                valid_aucs.append(auc)
+            except ValueError as e:  # e.g. NaN predictions from a diverged model
+                print(f"    [!] AUC failed for {col}: {e}")
+        per_class[col] = auc
+    macro = float(np.mean(valid_aucs)) if valid_aucs else float("nan")
+    return macro, per_class
+
+
+def label_counts(y_true: np.ndarray) -> Dict[str, Tuple[int, int]]:
+    """(positives, negatives) per target, counting only definitive 0/1 labels."""
+    return {
+        col: (int((y_true[:, i] == 1.0).sum()), int((y_true[:, i] == 0.0).sum()))
+        for i, col in enumerate(TARGET_COLS)
+    }
+
+
+def print_split_report(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, Dict[str, float]]:
+    """Print macro + per-target AUC for one validation subset, with label counts."""
+    macro, per_class = compute_competition_metric(y_true, y_pred)
+    counts = label_counts(y_true)
+    n_scored = sum(not np.isnan(v) for v in per_class.values())
+    print(f"  {name} AUC: {macro:.4f}  ({len(y_true)} studies, {n_scored}/{len(TARGET_COLS)} targets scorable)")
+    for t in TARGET_COLS:
+        pos, neg = counts[t]
+        auc_txt = "   n/a" if np.isnan(per_class[t]) else f"{per_class[t]:.4f}"
+        low = "  <- few positives, noisy" if 0 < pos < 5 else ""
+        print(f"    {t:18s}: {auc_txt}  (pos {pos:4d} / neg {neg:4d}){low}")
+    return macro, per_class
 
 
 # ==============================================================================
@@ -775,6 +805,13 @@ def run_training():
     print(f"  Training Studies  : {len(train_df)}")
     print(f"  Validation Studies: {len(val_df)} (including {len(val_gold)} Gold Standard)")
 
+    # Row-aligned with val_loader output (shuffle=False), so predictions can be split by source.
+    val_is_gold = val_df["is_gold"].fillna(False).astype(bool).to_numpy()
+    gold_true = val_df.loc[val_is_gold, TARGET_COLS].to_numpy(dtype=np.float32)
+    print("\nGold validation label counts (AUC on targets with <5 positives is mostly noise):")
+    for t, (pos, neg) in label_counts(gold_true).items():
+        print(f"    {t:18s}: pos {pos:3d} / neg {neg:3d}")
+
     # 3. DataLoaders
     train_ds = KneeMRITrainingDataset(train_df, series_df, series_dir, num_slices=CONFIG["num_slices"])
     val_ds = KneeMRITrainingDataset(val_df, series_df, series_dir, num_slices=CONFIG["num_slices"])
@@ -795,10 +832,15 @@ def run_training():
     criterion = WeightedBCEWithLogitsLoss(label_smoothing=CONFIG["label_smoothing"])
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
-    best_val_auc = 0.0
+    select_metric = CONFIG.get("select_metric", "silver")
+    if select_metric == "silver" and not (~val_is_gold).any():
+        print("No silver validation studies; selecting checkpoints on gold AUC instead.")
+        select_metric = "gold"
+    best_val_auc = -1.0
     output_dir = "/kaggle/working" if os.path.exists("/kaggle/working") else "checkpoints"
     os.makedirs(output_dir, exist_ok=True)
     best_ckpt_path = os.path.join(output_dir, "best_model_fold_0.pt")
+    val_preds_path = os.path.join(output_dir, "val_preds_fold_0.csv")
     accum_steps = CONFIG.get("accum_steps", 1)
 
     # 5. Epoch Loop
@@ -838,7 +880,7 @@ def run_training():
 
         # Validation
         model.eval()
-        val_preds, val_targets = [], []
+        val_preds, val_targets, val_uids = [], [], []
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch}/{CONFIG['epochs']} [Val]"):
                 sag = batch["sagittal"].to(device)
@@ -849,21 +891,24 @@ def run_training():
                     probs = torch.sigmoid(logits).cpu().numpy()
                 val_preds.append(probs)
                 val_targets.append(batch["targets"].cpu().numpy())
+                val_uids.extend(batch["study_uid"])
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         y_true = np.vstack(val_targets)
         y_pred = np.vstack(val_preds)
-        val_auc, per_class = compute_competition_metric(y_true, y_pred)
 
         print(f"\n--- Epoch {epoch}/{CONFIG['epochs']} Summary ---")
         print(f"  Train Loss : {avg_train_loss:.4f}")
-        print(f"  Val AUC    : {val_auc:.4f} (Best: {best_val_auc:.4f})")
-        for t in TARGET_COLS:
-            print(f"    {t:18s}: {per_class[t]:.4f}")
+        gold_auc, gold_per_class = print_split_report("Gold  ", y_true[val_is_gold], y_pred[val_is_gold])
+        silver_auc, silver_per_class = float("nan"), {}
+        if (~val_is_gold).any():
+            silver_auc, silver_per_class = print_split_report("Silver", y_true[~val_is_gold], y_pred[~val_is_gold])
+        val_auc = silver_auc if select_metric == "silver" else gold_auc
+        print(f"  Selection ({select_metric}) AUC: {val_auc:.4f} (Best so far: {max(best_val_auc, 0.0):.4f})")
 
-        if val_auc > best_val_auc:
+        if not np.isnan(val_auc) and val_auc > best_val_auc:
             best_val_auc = val_auc
             torch.save({
                 "epoch": epoch,
@@ -871,12 +916,23 @@ def run_training():
                 "architecture": "KneeAnatomicalMoEClassifier",
                 "backbone": CONFIG.get("backbone", "resnet34"),
                 "val_auc": val_auc,
-                "per_class_auc": per_class,
+                "select_metric": select_metric,
+                "gold_auc": gold_auc,
+                "silver_auc": silver_auc,
+                "gold_per_class_auc": gold_per_class,
+                "silver_per_class_auc": silver_per_class,
                 "config": CONFIG
             }, best_ckpt_path)
-            print(f"  >>> Saved NEW BEST model to: {best_ckpt_path} (Val AUC: {best_val_auc:.4f})")
+            # Validation predictions of the best epoch, for fitting ensemble weights later.
+            preds_df = pd.DataFrame({"StudyInstanceUID": val_uids, "is_gold": val_is_gold})
+            for i, t in enumerate(TARGET_COLS):
+                preds_df[t] = y_true[:, i]
+                preds_df[f"pred_{t}"] = y_pred[:, i]
+            preds_df.to_csv(val_preds_path, index=False)
+            print(f"  >>> Saved NEW BEST model to: {best_ckpt_path} ({select_metric} AUC: {best_val_auc:.4f})")
+            print(f"  >>> Saved validation predictions to: {val_preds_path}")
 
-    print(f"\nTraining Complete! Best Validation Macro AUC: {best_val_auc:.4f}")
+    print(f"\nTraining Complete! Best {select_metric} validation macro AUC: {best_val_auc:.4f}")
     print(f"Saved Checkpoint: {best_ckpt_path}")
 
 
