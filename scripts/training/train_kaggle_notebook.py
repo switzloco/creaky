@@ -445,6 +445,25 @@ def load_and_preprocess_series(dicom_files: List[str], target_size=(256, 256), n
 # 5. PYTORCH DATASET
 # ==============================================================================
 
+def cached_plane_to_slabs(arr: np.ndarray) -> np.ndarray:
+    """(K, H, W) uint8 cached slices -> (K, 3, H, W) float32 2.5D slabs, ImageNet-normalized.
+
+    The neighbour channels are the adjacent *sampled* slices, not adjacent slices of the full
+    series. The submission notebook has an identical copy; tests/test_preprocessing_parity.py
+    checks they stay in sync.
+    """
+    K = arr.shape[0]
+    slabs = []
+    for idx in range(K):
+        z_prev = arr[max(0, idx - 1)]
+        z_curr = arr[idx]
+        z_next = arr[min(K - 1, idx + 1)]
+        slab = np.stack([z_prev, z_curr, z_next], axis=0).astype(np.float32) / 255.0
+        slab = (slab - IMAGENET_MEAN) / IMAGENET_STD
+        slabs.append(slab)
+    return np.stack(slabs, axis=0).astype(np.float32)
+
+
 class KneeMRITrainingDataset(Dataset):
     def __init__(self, labels_df: pd.DataFrame, series_df: pd.DataFrame, series_dir: str, num_slices: int = 16):
         self.labels_df = labels_df.reset_index(drop=True)
@@ -495,16 +514,7 @@ class KneeMRITrainingDataset(Dataset):
                 npz = np.load(cached_p)
                 for plane in ["Sagittal", "Coronal", "Axial"]:
                     arr = npz[plane.lower()]  # (K, H, W) uint8
-                    K, H, W = arr.shape
-                    slabs = []
-                    for idx in range(K):
-                        z_prev = arr[max(0, idx - 1)]
-                        z_curr = arr[idx]
-                        z_next = arr[min(K - 1, idx + 1)]
-                        slab = np.stack([z_prev, z_curr, z_next], axis=0).astype(np.float32) / 255.0
-                        slab = (slab - IMAGENET_MEAN) / IMAGENET_STD
-                        slabs.append(slab)
-                    plane_tensors[plane] = torch.tensor(np.stack(slabs, axis=0), dtype=torch.float32)
+                    plane_tensors[plane] = torch.tensor(cached_plane_to_slabs(arr), dtype=torch.float32)
             except Exception:
                 plane_tensors = {}
 
@@ -915,6 +925,8 @@ def run_training():
                 "model_state_dict": model.state_dict(),
                 "architecture": "KneeAnatomicalMoEClassifier",
                 "backbone": CONFIG.get("backbone", "resnet34"),
+                # Tells the submission notebook which preprocessing to reproduce at test time.
+                "preprocessing": "cache_v1" if train_ds.cached_dir else "raw_v1",
                 "val_auc": val_auc,
                 "select_metric": select_metric,
                 "gold_auc": gold_auc,

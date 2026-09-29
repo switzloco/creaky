@@ -62,7 +62,7 @@ The prize is one payoff. The other is lasting knowledge and a portfolio in sport
 
 | # | Issue | Where | Why it matters |
 |---|---|---|---|
-| 1 | **Train/inference preprocessing mismatch.** Slice order (InstanceNumber vs physical position), slice range (central 76% vs full), 2.5D neighbours (sampled slices ~1/16 volume apart vs truly adjacent), rescale slope/intercept (not applied vs applied) | `cache_fast_slices.py` vs `submission_notebook.py` `load_and_preprocess_series` | The model is scored on inputs that look different from what it trained on. Probably the biggest lever available. |
+| 1 | **Train/inference preprocessing mismatch for the ConvNeXt model** (fixed on the inference side, Phase 1a; the ResNet was trained without the cache and already matched). Slice order (InstanceNumber vs physical position), slice range (central 76% vs full), 2.5D neighbours (sampled slices ~1/16 volume apart vs truly adjacent), rescale slope/intercept (not applied vs applied) | `cache_fast_slices.py` vs `submission_notebook.py` `load_and_preprocess_series` | The model is scored on inputs that look different from what it trained on. Probably the biggest lever available. |
 | 2 | Co-occurrence head exists only as a standalone test | `scripts/models/test_cooccurrence.py` | The 0.882 is being credited to the wrong change. |
 | 3 | `load_state_dict(strict=False)` and a silent fallback to resnet34 | submission notebook | A broken checkpoint still produces a submission, with random weights. |
 | 4 | Validation mixes gold and silver. Unscorable targets count as 0.5 in the average | `compute_competition_metric`, `run_training` | Checkpoint choice and experiment verdicts are driven by noise. |
@@ -89,14 +89,20 @@ The prize is one payoff. The other is lasting knowledge and a portfolio in sport
 **Questions you should be able to answer:** with only a handful of gold positives for a target, how far could its AUC swing by chance? Why can gold AUC and LB disagree?
 
 ### Phase 1 — Fix the preprocessing mismatch
-*Claude writes the code; you launch the cache rebuild and one retrain (two unattended runs).*
 
-1. One shared function for slice selection and preprocessing, used by the cache, the training fallback and the submission: physical-position ordering, one banding rule, rescale applied, 2.5D neighbours defined the same way everywhere.
-2. A **parity test**: one study through the cache path and the inference path must give the same tensors.
-3. Rebuild the cache, retrain the current ConvNeXt config **with nothing else changed**, submit, and log it next to 0.882.
-4. Side benefit: inference reads only the sampled slices instead of every DICOM, which is much faster.
+**1a. Make inference match training (done in code; needs one submission, no retrain).**
+The two models in the 0.882 ensemble were trained on *different* preprocessing:
+- **ResNet34 (0.803 run):** trained before the cache existed, on raw DICOMs (`raw_v1`: physical-position order, full series, truly adjacent neighbours, rescale applied). The old submission code matched this.
+- **ConvNeXt-Small (0.882 run):** trained on the cache (`cache_v1`: `InstanceNumber` order, 12–88% band, neighbours = adjacent *sampled* slices, no rescale, crop margin 4, last matching series per plane). The old submission code did **not** match this: the stronger model with 70% of the weight was being scored on unfamiliar input.
 
-**Questions you should be able to answer:** what are the four differences, and why would each confuse the model? Why can `InstanceNumber` order differ from physical position?
+The submission now runs each checkpoint with its own pipeline. New checkpoints record theirs (`"preprocessing"` key); for the two existing ones it's inferred from the backbone and printed in the log.
+- `tests/test_preprocessing_parity.py` builds synthetic DICOMs and checks that the submission reproduces both training pipelines exactly, including series selection. Run `python -m unittest tests/test_preprocessing_parity.py` after any preprocessing change.
+- **Your step:** save and submit the submission notebook with the same checkpoints and log the result as E03. Only the ConvNeXt's input changed, so any LB change is due to the fix.
+
+**1b. Better preprocessing for training and inference (optional experiment, later).**
+Now that both sides match, improving the preprocessing itself is a normal experiment: physical-position ordering, truly adjacent neighbour slices (standard 2.5D), rescale applied. It needs a cache rebuild and a retrain, so it's one change to test against the Phase 2 baseline rather than a bug fix.
+
+**Questions you should be able to answer:** what were the four differences, and why would each confuse the model? Why can `InstanceNumber` order differ from physical position? Why is the attention pooling not affected by slice order, while the 2.5D neighbour channels are? Why did the ensemble's two models need different preprocessing?
 
 ### Phase 2 — Standard gains: augmentation and folds
 *Several unattended runs; about one short session each.*
@@ -139,7 +145,7 @@ Single best fold, fp16, sampled slices only. Measure runtime per study, compute 
 | Step | Main work | Your time | GPU runs |
 |---|---|---|---|
 | 0 | Metrics, strict loading, experiment log | 1 review session | none |
-| 1 | Shared preprocessing, parity test, retrain | 2 short sessions | cache rebuild + 1 retrain |
+| 1 | Inference matches training (done), one submission; optional better preprocessing later | 1 short session | none for 1a; cache rebuild + retrain for 1b |
 | 2 | Augmentation, K-fold, fitted ensemble weights | 1 short session per run | aug ablation + 3–5 folds |
 | 3 | Label audit and fixes (overlaps step 2) | 1 weekend session | 1 fold per fix |
 | 4 | Co-occurrence, resolution, second backbone (optional) | 1 short session per run | 1 run per experiment |
