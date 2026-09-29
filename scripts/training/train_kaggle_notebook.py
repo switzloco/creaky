@@ -16,11 +16,13 @@ from typing import List, Dict, Tuple, Optional, Union
 import numpy as np
 import pandas as pd
 import pydicom
+import random
 import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as tv_models
+import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
@@ -55,7 +57,12 @@ CONFIG = {
     # Which validation AUC picks the best checkpoint: "silver" (held-out Jev labels, ~10x more
     # studies, less noisy) or "gold" (58 expert-labelled studies). Both are always reported.
     "select_metric": "silver",
+    # Phase 2: Multilabel Stratified 5-Fold CV & Non-destructive Augmentation
+    "n_splits": 5,
+    "fold": 0,          # Fold index to train (0..4)
+    "augment": True,     # Volume-consistent affine & photometric (no horizontal flip)
 }
+
 
 
 
@@ -464,12 +471,42 @@ def cached_plane_to_slabs(arr: np.ndarray) -> np.ndarray:
     return np.stack(slabs, axis=0).astype(np.float32)
 
 
+class VolumeConsistentAugmenter:
+    """Applies affine & photometric augmentations consistently across all slices in a plane.
+
+    CRITICAL: Never applies horizontal flip, to strictly preserve Medial vs. Lateral anatomy!
+    """
+    def __init__(self, p: float = 0.5):
+        self.p = p
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        """tensor shape: (K, 3, H, W) - K slices, 3 slab channels, H x W pixels."""
+        if random.random() > self.p:
+            return tensor
+
+        angle = random.uniform(-7.0, 7.0)
+        max_dx = int(0.05 * tensor.shape[-1])
+        max_dy = int(0.05 * tensor.shape[-2])
+        translations = [random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy)]
+        scale = random.uniform(0.95, 1.05)
+
+        contrast_factor = random.uniform(0.90, 1.10)
+        brightness_factor = random.uniform(-0.08, 0.08)
+
+        # Single vectorized affine call across all K slices in plane
+        out = TF.affine(tensor, angle=angle, translate=translations, scale=scale, shear=[0.0, 0.0])
+        out = out * contrast_factor + brightness_factor
+        return out
+
+
 class KneeMRITrainingDataset(Dataset):
-    def __init__(self, labels_df: pd.DataFrame, series_df: pd.DataFrame, series_dir: str, num_slices: int = 16):
+    def __init__(self, labels_df: pd.DataFrame, series_df: pd.DataFrame, series_dir: str, num_slices: int = 16, augment: bool = False):
         self.labels_df = labels_df.reset_index(drop=True)
         self.series_df = series_df
         self.series_dir = series_dir
         self.num_slices = num_slices
+        self.augment = augment
+        self.augmenter = VolumeConsistentAugmenter(p=0.5) if augment else None
         self.plane_col = None
         if not series_df.empty:
             for col in ["Anatomical_Plane", "anatomical_plane", "Plane", "SeriesDescription"]:
@@ -538,6 +575,11 @@ class KneeMRITrainingDataset(Dataset):
 
                 plane_tensors[plane] = load_and_preprocess_series(series_files, target_size=(256, 256), num_slices=self.num_slices)
 
+        # Apply Volume-Consistent Augmentation (train only, per-plane)
+        if self.augmenter:
+            for plane in ["Sagittal", "Coronal", "Axial"]:
+                plane_tensors[plane] = self.augmenter(plane_tensors[plane])
+
         targets = np.array([float(row[t]) for t in TARGET_COLS], dtype=np.float32)
         weights = []
         for t in TARGET_COLS:
@@ -554,6 +596,7 @@ class KneeMRITrainingDataset(Dataset):
             "targets": torch.tensor(targets, dtype=torch.float32),
             "weights": torch.tensor(weights, dtype=torch.float32)
         }
+
 
 
 # ==============================================================================
@@ -785,8 +828,51 @@ def print_split_report(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> Tup
 
 
 # ==============================================================================
-# 8. MASTER TRAINING PIPELINE
+# 8. MASTER TRAINING PIPELINE (PHASE 2: 5-FOLD MULTILABEL STRATIFIED CV)
 # ==============================================================================
+
+def assign_multilabel_folds(df: pd.DataFrame, target_cols: list, n_splits: int = 5, seed: int = 42) -> np.ndarray:
+    """Zero-dependency iterative multilabel stratification (Seffke & Tsoumakas)."""
+    np.random.seed(seed)
+    n_samples = len(df)
+    folds = np.full(n_samples, -1, dtype=int)
+
+    Y = (df[target_cols].to_numpy() >= 0.5).astype(int)
+    c_counts = Y.sum(axis=0)
+    desired_fold_counts = np.zeros((n_splits, len(target_cols)))
+    for c in range(len(target_cols)):
+        desired_fold_counts[:, c] = c_counts[c] / n_splits
+
+    desired_samples = n_samples / n_splits
+    fold_samples = np.zeros(n_splits)
+    current_fold_counts = np.zeros((n_splits, len(target_cols)))
+
+    label_density = Y.sum(axis=1)
+    sample_indices = np.argsort(-label_density)
+
+    shuffled_indices = []
+    for density in np.unique(label_density)[::-1]:
+        group = sample_indices[label_density[sample_indices] == density]
+        np.random.shuffle(group)
+        shuffled_indices.extend(group)
+    sample_indices = np.array(shuffled_indices)
+
+    for idx in sample_indices:
+        y = Y[idx]
+        pos_labels = np.where(y == 1)[0]
+        if len(pos_labels) > 0:
+            rarest = min(pos_labels, key=lambda l: c_counts[l])
+            shortfalls = desired_fold_counts[:, rarest] - current_fold_counts[:, rarest]
+            best_fold = int(np.argmax(shortfalls))
+        else:
+            shortfalls = desired_samples - fold_samples
+            best_fold = int(np.argmax(shortfalls))
+        folds[idx] = best_fold
+        fold_samples[best_fold] += 1
+        current_fold_counts[best_fold] += y
+
+    return folds
+
 
 def run_training():
     train_csv, series_csv, series_dir = get_train_paths()
@@ -797,23 +883,29 @@ def run_training():
     labels_df = assemble_labels(train_csv)
     series_df = pd.read_csv(series_csv) if (series_csv and os.path.exists(series_csv)) else pd.DataFrame()
 
-    # 2. Validation Split: Keep all 58 Gold studies in Validation for true ground-truth tracking!
-    val_gold = labels_df[labels_df["is_gold"] == True]
-    non_gold = labels_df[labels_df["is_gold"] == False].sample(frac=1.0, random_state=42)
+    # 2. Phase 2: Multilabel Stratified Split
+    # The 58 Gold studies serve as the fixed reference benchmark across all folds
+    val_gold = labels_df[labels_df["is_gold"] == True].copy()
+    silver_df = labels_df[labels_df["is_gold"] == False].reset_index(drop=True)
 
-    val_non_gold = non_gold.iloc[:int(len(non_gold) * 0.1)]
-    train_df = non_gold.iloc[int(len(non_gold) * 0.1):]
-    val_df = pd.concat([val_gold, val_non_gold], ignore_index=True)
+    n_splits = CONFIG.get("n_splits", 5)
+    target_fold = CONFIG.get("fold", 0)
+
+    silver_df["fold"] = assign_multilabel_folds(silver_df, TARGET_COLS, n_splits=n_splits, seed=42)
+
+    train_df = silver_df[silver_df["fold"] != target_fold].reset_index(drop=True)
+    val_silver = silver_df[silver_df["fold"] == target_fold].reset_index(drop=True)
+    val_df = pd.concat([val_gold, val_silver], ignore_index=True)
 
     if CONFIG["max_train_studies"] is not None:
         train_df = train_df.iloc[:CONFIG["max_train_studies"]]
     if CONFIG.get("max_val_studies") is not None:
         val_df = val_df.iloc[:CONFIG["max_val_studies"]]
 
-
-    print(f"\nDataset Splits:")
-    print(f"  Training Studies  : {len(train_df)}")
-    print(f"  Validation Studies: {len(val_df)} (including {len(val_gold)} Gold Standard)")
+    print(f"\nPhase 2 Stratified Split — Fold {target_fold}/{n_splits}:")
+    print(f"  Training Studies (Silver) : {len(train_df)}")
+    print(f"  Validation Studies Total  : {len(val_df)} ({len(val_gold)} Gold + {len(val_silver)} Silver OOF)")
+    print(f"  Augmentation Enabled      : {CONFIG.get('augment', True)}")
 
     # Row-aligned with val_loader output (shuffle=False), so predictions can be split by source.
     val_is_gold = val_df["is_gold"].fillna(False).astype(bool).to_numpy()
@@ -823,8 +915,12 @@ def run_training():
         print(f"    {t:18s}: pos {pos:3d} / neg {neg:3d}")
 
     # 3. DataLoaders
-    train_ds = KneeMRITrainingDataset(train_df, series_df, series_dir, num_slices=CONFIG["num_slices"])
-    val_ds = KneeMRITrainingDataset(val_df, series_df, series_dir, num_slices=CONFIG["num_slices"])
+    train_ds = KneeMRITrainingDataset(
+        train_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=CONFIG.get("augment", True)
+    )
+    val_ds = KneeMRITrainingDataset(
+        val_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=False
+    )
 
     train_loader = DataLoader(train_ds, batch_size=CONFIG["batch_size"], shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=CONFIG["batch_size"], shuffle=False, num_workers=CONFIG["num_workers"])
@@ -849,12 +945,12 @@ def run_training():
     best_val_auc = -1.0
     output_dir = "/kaggle/working" if os.path.exists("/kaggle/working") else "checkpoints"
     os.makedirs(output_dir, exist_ok=True)
-    best_ckpt_path = os.path.join(output_dir, "best_model_fold_0.pt")
-    val_preds_path = os.path.join(output_dir, "val_preds_fold_0.csv")
+    best_ckpt_path = os.path.join(output_dir, f"best_model_fold_{target_fold}.pt")
+    val_preds_path = os.path.join(output_dir, f"val_preds_fold_{target_fold}.csv")
     accum_steps = CONFIG.get("accum_steps", 1)
 
     # 5. Epoch Loop
-    print("\nStarting Training Loop...")
+    print(f"\nStarting Training Loop (Fold {target_fold}/{n_splits})...")
     for epoch in range(1, CONFIG["epochs"] + 1):
         model.train()
         train_loss = 0.0
@@ -909,7 +1005,7 @@ def run_training():
         y_true = np.vstack(val_targets)
         y_pred = np.vstack(val_preds)
 
-        print(f"\n--- Epoch {epoch}/{CONFIG['epochs']} Summary ---")
+        print(f"\n--- Epoch {epoch}/{CONFIG['epochs']} Summary (Fold {target_fold}) ---")
         print(f"  Train Loss : {avg_train_loss:.4f}")
         gold_auc, gold_per_class = print_split_report("Gold  ", y_true[val_is_gold], y_pred[val_is_gold])
         silver_auc, silver_per_class = float("nan"), {}
@@ -925,6 +1021,9 @@ def run_training():
                 "model_state_dict": model.state_dict(),
                 "architecture": "KneeAnatomicalMoEClassifier",
                 "backbone": CONFIG.get("backbone", "resnet34"),
+                "fold": target_fold,
+                "n_splits": n_splits,
+                "augment": CONFIG.get("augment", True),
                 # Tells the submission notebook which preprocessing to reproduce at test time.
                 "preprocessing": "cache_v1" if train_ds.cached_dir else "raw_v1",
                 "val_auc": val_auc,
@@ -944,8 +1043,9 @@ def run_training():
             print(f"  >>> Saved NEW BEST model to: {best_ckpt_path} ({select_metric} AUC: {best_val_auc:.4f})")
             print(f"  >>> Saved validation predictions to: {val_preds_path}")
 
-    print(f"\nTraining Complete! Best {select_metric} validation macro AUC: {best_val_auc:.4f}")
+    print(f"\nTraining Complete (Fold {target_fold})! Best {select_metric} validation macro AUC: {best_val_auc:.4f}")
     print(f"Saved Checkpoint: {best_ckpt_path}")
+
 
 
 if __name__ == "__main__":

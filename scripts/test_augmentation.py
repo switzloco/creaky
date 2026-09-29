@@ -27,25 +27,21 @@ class VolumeConsistentAugmenter:
         brightness_factor = random.uniform(-0.08, 0.08)
 
         # Apply to all K slices identically
-        K, C, H, W = tensor.shape
-        # Reshape to (K*C, 1, H, W) or process per slice
-        out = tensor.clone()
-        for k in range(K):
-            # Affine on the 3-channel slab
-            slab = TF.affine(out[k], angle=angle, translate=translations, scale=scale, shear=0)
-            # Photometric
-            slab = slab * contrast_factor + brightness_factor
-            out[k] = slab
-
+        # Vectorized affine across all K slices in a plane
+        out = TF.affine(tensor, angle=angle, translate=translations, scale=scale, shear=[0.0, 0.0])
+        out = out * contrast_factor + brightness_factor
         return out
 
-# Test with dummy tensor
-dummy = torch.randn(16, 3, 256, 256)
-aug = VolumeConsistentAugmenter(p=1.0)
-augmented = aug(dummy)
 
-print("Original shape:", dummy.shape, "min:", dummy.min().item(), "max:", dummy.max().item())
-print("Augmented shape:", augmented.shape, "min:", augmented.min().item(), "max:", augmented.max().item())
-print("Mean absolute difference:", torch.abs(augmented - dummy).mean().item())
-assert augmented.shape == dummy.shape
-print("Augmentation test PASSED successfully!")
+if __name__ == "__main__":
+    # Test with dummy tensor
+    dummy = torch.randn(16, 3, 256, 256)
+    aug = VolumeConsistentAugmenter(p=1.0)
+    augmented = aug(dummy)
+
+    print("Original shape:", dummy.shape, "min:", dummy.min().item(), "max:", dummy.max().item())
+    print("Augmented shape:", augmented.shape, "min:", augmented.min().item(), "max:", augmented.max().item())
+    print("Mean absolute difference:", torch.abs(augmented - dummy).mean().item())
+    assert augmented.shape == dummy.shape
+    print("Augmentation test PASSED successfully!")
+

@@ -58,32 +58,34 @@ def iterative_multilabel_split(df: pd.DataFrame, target_cols: list, n_splits: in
 
     return folds
 
-# Load labels
-with open("scripts/training/train_kaggle_notebook.py", "r", encoding="utf-8") as f:
-    content = f.read()
+if __name__ == "__main__":
+    # Load labels
+    with open("scripts/training/train_kaggle_notebook.py", "r", encoding="utf-8") as f:
+        content = f.read()
 
-m = re.search(r'EMBEDDED_JEV_LABELS_B64\s*=\s*"([^"]+)"', content)
-b64 = m.group(1)
-raw = gzip.decompress(base64.b64decode(b64))
-df = pd.read_csv(io.BytesIO(raw))
+    m = re.search(r'EMBEDDED_JEV_LABELS_B64\s*=\s*"([^"]+)"', content)
+    b64 = m.group(1)
+    raw = gzip.decompress(base64.b64decode(b64))
+    df = pd.read_csv(io.BytesIO(raw))
 
-TARGET_COLS = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "Lateral OA", "PF OA", "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
+    TARGET_COLS = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "Lateral OA", "PF OA", "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
 
-# Stratify Silver studies (4,349 studies) across 5 folds
-silver_df = df[df["label_source"] == "jev"].reset_index(drop=True)
-silver_df["fold"] = iterative_multilabel_split(silver_df, TARGET_COLS, n_splits=5, seed=42)
+    # Stratify Silver studies (4,349 studies) across 5 folds
+    silver_df = df[df["label_source"] == "jev"].reset_index(drop=True)
+    silver_df["fold"] = iterative_multilabel_split(silver_df, TARGET_COLS, n_splits=5, seed=42)
 
-print("--- Silver Folds Size ---")
-print(silver_df["fold"].value_counts().sort_index())
+    print("--- Silver Folds Size ---")
+    print(silver_df["fold"].value_counts().sort_index())
 
-print("\n--- Positive Counts per Fold across 12 Targets ---")
-fold_pos = []
-for f in range(5):
-    f_df = silver_df[silver_df["fold"] == f]
-    f_dict = {"fold": f, "total": len(f_df)}
-    for t in TARGET_COLS:
-        f_dict[t] = int((f_df[t] >= 0.5).sum())
-    fold_pos.append(f_dict)
+    print("\n--- Positive Counts per Fold across 12 Targets ---")
+    fold_pos = []
+    for f in range(5):
+        f_df = silver_df[silver_df["fold"] == f]
+        f_dict = {"fold": f, "total": len(f_df)}
+        for t in TARGET_COLS:
+            f_dict[t] = int((f_df[t] >= 0.5).sum())
+        fold_pos.append(f_dict)
 
-res_df = pd.DataFrame(fold_pos)
-print(res_df.to_string(index=False))
+    res_df = pd.DataFrame(fold_pos)
+    print(res_df.to_string(index=False))
+

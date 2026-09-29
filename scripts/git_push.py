@@ -1,7 +1,7 @@
 import subprocess
 
-msg = "feat: Phase 2 prep - 5-fold multilabel stratification & volume-consistent augmentation; Phase 3 label audit & domain notes"
-subprocess.run(["git", "add", "DOMAIN_NOTES.md", "scripts/"], cwd=r"c:\Users\nswitzer\Antigrav Proj\creaky")
+msg = "feat: implement Phase 2 - zero-dependency 5-fold multilabel stratification & vectorized volume-consistent augmentations"
+subprocess.run(["git", "add", "-A"], cwd=r"c:\Users\nswitzer\Antigrav Proj\creaky")
 result = subprocess.run(["git", "commit", "-m", msg], capture_output=True, text=True, cwd=r"c:\Users\nswitzer\Antigrav Proj\creaky")
 print("COMMIT STDOUT:", result.stdout)
 print("COMMIT STDERR:", result.stderr)
