@@ -37,16 +37,25 @@
 
 ---
 
-## 2. Active Run: Experiment E04 Details
+## 2. Completed Run: Experiment E04 Results (Phase 2 Fold 0)
 
-- **Kernel:** [`nswitzer/training-book` (Version 5)](https://www.kaggle.com/code/nswitzer/training-book)
-- **Hardware:** Kaggle Nvidia Tesla T4 GPU (GPU quota: ~30h/week available).
-- **Architecture:** ConvNeXt-Small Anatomical MoE (Sagittal $\rightarrow$ ACL/MM/LM, Coronal $\rightarrow$ MCL, Axial $\rightarrow$ PF OA/Effusion/Synovitis, Joint $\rightarrow$ Medial OA/Lateral OA/Baker/Contusion/Fracture).
-- **Target Fold:** Fold 0 of 5.
-- **Expected Artifacts:**
-  - `/kaggle/working/best_model_fold_0.pt` (with recorded `"preprocessing": "cache_v1"`)
-  - `/kaggle/working/val_preds_fold_0.csv` (for out-of-fold ensemble weight fitting)
-- **Status:** Actively running on Kaggle. Log fetching tool ready at `scripts/fetch_kernel_output.py`.
+- **Kernel:** [`nswitzer/training-book` (Version 5)](https://www.kaggle.com/code/nswitzer/training-book) — **COMPLETE** (2h 56m runtime on Kaggle T4).
+- **Architecture:** ConvNeXt-Small Anatomical MoE with `VolumeConsistentAugmenter` (horizontal flip strictly OFF) and 5-fold iterative multilabel stratification.
+- **Results Across Epochs:**
+  - Epoch 1: Train Loss `0.5581` | Gold AUC `0.6975` | Silver AUC `0.7470`
+  - Epoch 2: Train Loss `0.5131` | Gold AUC `0.7785` | Silver AUC `0.8053`
+  - Epoch 3: Train Loss `0.4742` | Gold AUC `0.8265` | Silver AUC `0.8324`
+  - Epoch 4: Train Loss `0.4404` | Gold AUC `0.8509` | Silver AUC `0.8494`
+  - Epoch 5: Train Loss `0.4076` | Gold AUC `0.8478` | **Silver AUC: 0.8541** $\rightarrow$ **SAVED BEST CHECKPOINT**
+  - Epoch 6: Train Loss `0.3829` | **Gold AUC: 0.8581** | Silver AUC `0.8538`
+- **Saved Artifacts Downloaded Locally:**
+  - `checkpoints/e04_trained/best_model_fold_0.pt` (200.82 MB, records `"preprocessing": "cache_v1"`, best epoch 5, val AUC 0.8541)
+  - `checkpoints/e04_trained/val_preds_fold_0.csv` (0.19 MB, 928 validation studies: 58 Gold + 870 Silver OOF)
+- **Per-Class Silver AUC Breakdown (at best checkpoint):**
+  - Baker's: `0.9090` | Medial OA: `0.8928` | Medial Meniscus: `0.8717` | Fracture: `0.8690`
+  - ACL: `0.8629` | Lateral OA: `0.8617` | Effusion: `0.8574` | PF OA: `0.8523`
+  - Synovitis: `0.8367` | Contusion: `0.8322` | MCL: `0.8294` | Lateral Meniscus: `0.7740`
+
 
 ---
 

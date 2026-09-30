@@ -19,29 +19,25 @@ Context is in `PLAN.md` and `HANDOFF_OPUS.md`; results go in `EXPERIMENTS.md`.
 ## Completed Runs
 
 - **E03 (Public LB: 0.885)**: Preprocessing parity fix verified on Kaggle. ConvNeXt received native `cache_v1` while ResNet received `raw_v1`. Score increased +0.003 without retraining.
-- **E02 (Autopsy)**: Ran 6 epochs on Kaggle T4. Gold AUC climbed from 0.7283 → 0.8561. Discovered metric bug on continuous Silver labels (NaN) which prevented checkpoint saving. Bug permanently fixed in Phase 2 pipeline.
+- **E02 (Autopsy)**: Ran 6 epochs on Kaggle T4. Gold AUC climbed from 0.7283 → 0.8561. Metric bug resolved.
+- **E04 (Phase 2 Fold 0)**: Finished in 2h 56m on Kaggle T4. Silver AUC reached **0.8541** at Ep 5; Gold AUC reached **0.8581** at Ep 6. Downloaded `best_model_fold_0.pt` (200.8MB) and `val_preds_fold_0.csv`.
 
 ---
 
-## Active Run — E04: Phase 2 Fold 0 Training (Augmentation + 5-Fold Stratification)
+## Immediate Next Actions (Assuming Opus Thumbs Up)
 
-Kernel currently running on Kaggle: `nswitzer/training-book` (Version 5).
+### 1. Upload E04 Checkpoint to Kaggle Models / Dataset
+Upload `checkpoints/e04_trained/best_model_fold_0.pt` as a Kaggle dataset or model source so the submission kernel can access it.
 
-### What's Running:
-- **Architecture**: ConvNeXt-Small Anatomical MoE.
-- **Augmentation**: VolumeConsistentAugmenter (affine ±7°, translation ±5%, zoom 0.95–1.05x, contrast/brightness jitter; **horizontal flip strictly disabled**).
-- **CV**: Fold 0 of 5-fold iterative multilabel stratification on Silver labels. Fixed 58 Gold reference validation.
-- **Metric**: Binarized continuous Silver labels at $\ge 0.5$ + checkpoint fallback guardrail.
-- **Outputs**: `best_model_fold_0.pt` and `val_preds_fold_0.csv`.
+### 2. Run E05: Leaderboard Submission
+- **Option A (Ablation)**: Single-model Fold 0 submission to benchmark Phase 2 in isolation against 0.885.
+- **Option B (3-Way Blend)**: Ensemble Phase 2 Fold 0 + pre-Phase 2 ConvNeXt-S (0.885 anchor) + pre-Phase 2 ResNet-34.
 
-### How to Check & Fetch Results:
-```cmd
-uv run python scripts/fetch_kernel_output.py --kernel nswitzer/training-book --dir checkpoints/e04_training
-```
+### 3. Fit Ensemble Weights on `val_preds_fold_0.csv`
+Use `scipy.optimize` to fit per-model and per-target blending weights on the 928 validation studies instead of guessing.
 
-### When E04 Finishes:
-1. Fetch `best_model_fold_0.pt` and `val_preds_fold_0.csv`.
-2. Extract final Gold AUC and Silver AUC from the log and update `EXPERIMENTS.md`.
-3. Create Kaggle dataset `nswitzer/creaky-e04-checkpoint` or attach to submission notebook.
-4. Review strategic options with Opus 5.5 as detailed in `HANDOFF_OPUS.md`.
+### 4. Launch Next Training Run: Fold 1 or Backbone Diversity
+- **Fold 1 Training**: Set `"fold": 1` in `CONFIG` in `scripts/training/train_kaggle_notebook.py`, rebuild notebooks, and push `training-book` to train Fold 1 (~2.5h).
+- **Backbone Diversity**: Or set `"backbone": "efficientnet_v2_s"` for Fold 0 to produce a diverse architecture for the ensemble.
+
 
