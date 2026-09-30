@@ -24,20 +24,22 @@ Context is in `PLAN.md` and `HANDOFF_OPUS.md`; results go in `EXPERIMENTS.md`.
 
 ---
 
-## Immediate Next Actions (Assuming Opus Thumbs Up)
+## Immediate Next Actions
 
-### 1. Upload E04 Checkpoint to Kaggle Models / Dataset
-Upload `checkpoints/e04_trained/best_model_fold_0.pt` as a Kaggle dataset or model source so the submission kernel can access it.
+### 1. Wait for E05 (Solo Submission) to Score
+- Pushed E04 checkpoint to a Kaggle dataset (`nswitzer/creaky-e04-convnext-fold0`).
+- Submitted E05 as a **solo** model run using only the E04 checkpoint to provide a clean ablation against our previous 0.885 LB score. 
+- Wait for the LB score to finish computing.
 
-### 2. Run E05: Leaderboard Submission
-- **Option A (Ablation)**: Single-model Fold 0 submission to benchmark Phase 2 in isolation against 0.885.
-- **Option B (3-Way Blend)**: Ensemble Phase 2 Fold 0 + pre-Phase 2 ConvNeXt-S (0.885 anchor) + pre-Phase 2 ResNet-34.
+### 2. Wait for E06 (Fold 1 Training) to Finish
+- Launched Fold 1 training (`nswitzer/training-book`).
+- Once finished, download `best_model_fold_1.pt` and `val_preds_fold_1.csv` and log results.
+- **If E05 scores higher than 0.885**, proceed with training folds 2, 3, and 4 to complete the 5-fold ensemble.
+- **If E05 scores lower than 0.885**, halt fold training and investigate why Phase 2 harmed LB performance (overfitting? augmentations too aggressive? metric disparity?).
 
-### 3. Fit Ensemble Weights on `val_preds_fold_0.csv`
-Use `scipy.optimize` to fit per-model and per-target blending weights on the 928 validation studies instead of guessing.
-
-### 4. Launch Next Training Run: Fold 1 or Backbone Diversity
-- **Fold 1 Training**: Set `"fold": 1` in `CONFIG` in `scripts/training/train_kaggle_notebook.py`, rebuild notebooks, and push `training-book` to train Fold 1 (~2.5h).
-- **Backbone Diversity**: Or set `"backbone": "efficientnet_v2_s"` for Fold 0 to produce a diverse architecture for the ensemble.
+### 3. Consider Ensemble Weight Fitting (Postponed)
+- Fitting optimal weights requires predictions on the *same* validation set from all models in the ensemble.
+- Since we do not have local predictions from the older models on the current validation folds, we cannot run this offline.
+- Options for later: write a kernel to output predictions from all models on the validation set, or simply use equal weighting for a 5-fold ensemble of the same architecture.
 
 

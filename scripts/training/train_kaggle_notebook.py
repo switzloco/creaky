@@ -59,7 +59,7 @@ CONFIG = {
     "select_metric": "silver",
     # Phase 2: Multilabel Stratified 5-Fold CV & Non-destructive Augmentation
     "n_splits": 5,
-    "fold": 0,          # Fold index to train (0..4)
+    "fold": 1,          # Fold index to train (0..4)
     "augment": True,     # Volume-consistent affine & photometric (no horizontal flip)
 }
 
