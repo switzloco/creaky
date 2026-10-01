@@ -112,6 +112,7 @@ Now that both sides match, improving the preprocessing itself is a normal experi
 2. **K-fold** (3–5 depending on your remaining weekly Kaggle GPU quota), multilabel-stratified on the silver labels. Each fold is a separate run you can launch and leave.
 3. Fit the ensemble weights on the saved validation predictions, replacing the 0.7/0.3 guess.
 4. Retrain the final candidate with the gold studies included in training.
+5. Next time the training config changes anyway (not mid-way through a set of folds): the augmenter rotates/shifts *after* ImageNet normalization, so the empty borders fill with 0, which is mid-grey, not black. Augment before normalizing, or fill with `-mean/std` per channel.
 
 **Questions you should be able to answer:** how much does val AUC vary between folds, and was any earlier "improvement" smaller than that?
 

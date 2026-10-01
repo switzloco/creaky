@@ -39,6 +39,12 @@ TARGET_COLS = [
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
 
+# Which attached checkpoints to use. Empty = every .pt/.pth found under /kaggle/input.
+# Otherwise only checkpoints whose full path contains one of these substrings are loaded,
+# e.g. ["creaky-e04-convnext-fold0"] for a solo run. Attached kernel outputs (like
+# training-book) are picked up automatically, so set this for any ablation submission.
+CHECKPOINT_FILTER: List[str] = []
+
 # Default class priors if model weights are not found
 DEFAULT_PRIORS = {
     "ACL": 0.414, "MCL": 0.155, "Medial Meniscus": 0.448, "Lateral Meniscus": 0.397,
@@ -709,6 +715,15 @@ def find_series_files(study_uid: str, study_series: pd.DataFrame, plane_col: Opt
 def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFrame:
     """Run full inference loop and generate submission.csv."""
     test_csv, test_series_csv, test_series_dir, ckpt_files = get_data_paths()
+    ckpt_files = sorted(set(ckpt_files))
+    if CHECKPOINT_FILTER:
+        skipped = [c for c in ckpt_files if not any(f in c for f in CHECKPOINT_FILTER)]
+        ckpt_files = [c for c in ckpt_files if any(f in c for f in CHECKPOINT_FILTER)]
+        print(f"CHECKPOINT_FILTER {CHECKPOINT_FILTER}: using {len(ckpt_files)}, skipping {len(skipped)}")
+        for c in skipped:
+            print(f"  skipped: {c}")
+        if not ckpt_files:
+            raise RuntimeError(f"CHECKPOINT_FILTER {CHECKPOINT_FILTER} matched no attached checkpoint.")
 
     print(f"Reading test data from: {test_csv}")
     if test_csv is None or not os.path.exists(test_csv):

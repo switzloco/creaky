@@ -43,7 +43,7 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1
 CONFIG = {
     "backbone": "convnext_small",
     "pretrained": True,
-    "epochs": 6,
+    "epochs": 10,         # E08: was 6; gold AUC was still rising at epoch 6 in E02 and E04
     "batch_size": 2,
     "accum_steps": 2,
     "num_slices": 16,
@@ -59,7 +59,7 @@ CONFIG = {
     "select_metric": "silver",
     # Phase 2: Multilabel Stratified 5-Fold CV & Non-destructive Augmentation
     "n_splits": 5,
-    "fold": 1,          # Fold index to train (0..4)
+    "fold": 0,          # Fold index to train (0..4). E08 reruns fold 0 to compare with E04
     "augment": True,     # Volume-consistent affine & photometric (no horizontal flip)
 }
 

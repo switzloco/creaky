@@ -13,13 +13,15 @@ A running notebook of what's been learned about the domain (not the code). A few
 - **Axial:** Optimal for Patellofemoral joint (PF OA), trochlear groove dysplasia, joint effusion, and synovial thickening / synovitis.
 
 ## How reports describe findings (Phase 3 Audit Findings)
-- **Reporting Bias / Selective Omission:** Radiologists report what clinical indication requested. If referral is "acute twist / suspected ACL tear", doctors often omit mild effusion, minor synovitis, or subtle PF cartilage thinning even when visibly present on MRI. This causes 30–60% of positive Gold cases to have no explicit mention in the text report!
+- **Reporting Bias / Selective Omission (hypothesis, not yet measured):** Radiologists tend to report what the clinical indication asked about. With a referral like "acute twist / suspected ACL tear", mild effusion, minor synovitis or subtle PF cartilage thinning may go unmentioned even when visible on MRI.
+  - *Correction:* the earlier "30–60% of gold positives are not mentioned in the report" figure came from `scripts/audit_gold_disagreements.py`, which measures the **fallback regex labeler**, not the reports and not Jev. A regex "miss" can just mean the report phrased it in a way (or a language) the regex doesn't know. So that number is an upper bound that mixes regex misses with real omissions.
+  - *How to measure it properly:* `scripts/label_mining/audit_jev_vs_gold.py` (Jev vs gold, per target, with counts). Paste its table here.
 - **Contusion vs. Soft Tissue Edema:** Text regex on "edema" or "contusion" produces false positives when the report discusses subcutaneous or muscular swelling rather than osseous (bone marrow) contusion.
 - **Indirect Meniscal Phrasing:** Radiologists frequently omit the word "tear" and use functional descriptions: *"signal reaches inferior articular surface"*, *"blunted posterior horn"*, *"degenerative meniscopathy"*, or *"maceration"*.
 - **Synovitis Ambiguity:** Radiologists rarely diagnose "synovitis" by name on unenhanced knee MRI without IV gadolinium contrast; instead they describe "joint fluid accumulation", "plica irritation", or "Hoffa fat pad edema".
 
 ## Evaluating like a med-device team
-- **Label Uncertainty Masking:** Because 30–50% of negative reports represent "unmentioned / omitted" findings rather than confirmed absence of disease, treating unmentioned findings as soft labels (`weight=0.3` or `0.0`) is medically superior to forcing binary 0.0 cross-entropy loss.
+- **Label Uncertainty Masking:** If a target's report-derived negatives often turn out to be unmentioned findings rather than confirmed absences, those negatives should carry less weight in the loss than confirmed ones. Whether that's true, and for which targets, depends on the Jev-vs-gold audit above. With 58 gold studies, rates for targets with fewer than ~5 gold positives are anecdotes.
 - **Multi-Site Generalization:** Reports in English, Spanish, Bulgarian, and Greek reflect different international dictation conventions; models must rely on anatomical image features rather than report artifacts.
 
 ## Open questions

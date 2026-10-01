@@ -85,3 +85,17 @@ Our Gold audit showed that radiologist text reports omit true positive findings 
 - Effusion (44.8% omitted in text)
 - Meniscal tears (35% omitted in text)
 Currently, `WeightedBCEWithLogitsLoss` treats false positives and false negatives symmetrically on Silver labels. Should we implement an asymmetric loss (e.g. Asymmetric Loss for Multi-Label Learning / focal discounting of negatives on high-omission targets) to stop the model from penalizing true image findings that text reports missed?
+
+---
+
+## 4. Opus answers (review of 2026-10-01)
+
+Actions are in `NEXT_RUN.md`; this is the reasoning.
+
+- **Q1 — solo or blend:** E05 (solo) vs 0.885 (two-model ensemble) doesn't isolate Phase 2. Add **E07**: the old ConvNeXt solo. E07 vs E05 = Phase 2 effect; E07 vs E03 = what the ResNet adds. Blend after that. Also confirm E05 was really solo: the `training-book` kernel output was attached too, and the submission loads every `.pt` it finds. `CHECKPOINT_FILTER` in the submission now makes solo runs explicit.
+- **Q2 — weight fitting:** Don't optimize on `val_preds`. Only the new folds have validation predictions. The old models trained on a random 90% split that overlaps these folds, so their predictions there would be leaked. And 58 gold studies are too few for per-target weights. Average folds equally; mix old and new models with coarse weights checked on the leaderboard.
+- **Q3 — folds or backbone:** First **E08**: fold 0 with 10 epochs, because gold AUC was still rising at epoch 6 in both E02 and E04. Then the remaining folds with whichever epoch count wins. Then a second backbone.
+- **Q4 — asymmetric loss:** Not yet. The 30–77% "omission" figures come from the regex fallback labeler, not from Jev (whose labels are used for training), so they mix regex misses with real omissions. Run `scripts/label_mining/audit_jev_vs_gold.py` first. If Jev's negatives turn out unreliable for a target, lower their per-target weight; the loss already supports that, so no new loss function is needed.
+- **Also:**
+  - E04 shows no measurable augmentation effect yet: gold AUC 0.8581 vs 0.8561 in E02 at epoch 6 is noise on 58 studies.
+  - The old rule "halt folds if E05 < 0.885" is replaced: a single model below a two-model ensemble is expected.
