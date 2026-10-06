@@ -31,3 +31,12 @@ __pycache__/
 Thumbs.db
 .DS_Store
 .env
+
+# Kaggle & Scratch outputs
+kaggle_out*/
+kaggle_datasets/
+kaggle_push*/
+e*_output/
+scratch/
+kernels.csv
+

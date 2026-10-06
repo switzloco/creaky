@@ -1,7 +1,10 @@
-# creaky
-Knee investigation for Kaggle RSNA
+# creaky — RSNA Knee Abnormality Detection
 
-I'm trying to perform well in this hackathon on Kaggle https://www.kaggle.com/competitions/rsna-knee-abnormality-detection
+> **Clinical Decision Support & Surgical Product Alignment:**  
+> See [`docs/stryker_sports_medicine_matrix.md`](docs/stryker_sports_medicine_matrix.md) for the complete 12-abnormality Stryker Sports Medicine & Orthopedics product portfolio, decision logic, and back-table kit checklists. Programmatic recommender available via `src/clinical/product_recommender.py`.  
+> Interactive Kaggle Demo: [`knee_mri_patient_explainer.ipynb`](knee_mri_patient_explainer.ipynb).
+
+Knee investigation for Kaggle RSNA: https://www.kaggle.com/competitions/rsna-knee-abnormality-detection
 
 Skip to
 content

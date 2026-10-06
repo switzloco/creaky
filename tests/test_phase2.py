@@ -48,6 +48,21 @@ class TestPhase2(unittest.TestCase):
         out_no_aug = no_aug(tensor)
         self.assertTrue(torch.equal(out_no_aug, tensor))
 
+    def test_volume_consistent_hflip(self):
+        # When hflip is activated, horizontal flip is applied identically across all K slices in plane
+        import torchvision.transforms.functional as TF
+        aug = VolumeConsistentAugmenter(p=0.0, hflip=True)
+        tensor = torch.randn(16, 3, 64, 64)
+        
+        # Test flip applied
+        flipped = aug(tensor, flip_this_volume=True)
+        expected = TF.hflip(tensor)
+        self.assertTrue(torch.equal(flipped, expected))
+        
+        # Verify that all slices were flipped identically across width dimension
+        for k in range(16):
+            self.assertTrue(torch.equal(flipped[k], TF.hflip(tensor[k])))
+
     def test_metric_continuous_and_discrete_labels(self):
         from scripts.training.train_kaggle_notebook import compute_competition_metric, label_counts, TARGET_COLS
         

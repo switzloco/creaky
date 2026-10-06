@@ -121,7 +121,7 @@
     </header>
 
     <div class="score-banner">
-      <div class="score-text" id="score-text">Answered: 0 / 10 | Score: 0%</div>
+      <div class="score-text" id="score-text">Answered: 0 / 21 | Score: 0%</div>
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" id="progress-bar"></div>
       </div>
@@ -291,6 +291,177 @@
           correct: "If a weights path breaks or a bug causes the model to output default priors for all cases, the variance (std dev) drops to 0.00000. Our automated sanity check measures std dev across test cases and triggers an alert if predictions don't vary dynamically!",
           wrong: "Incorrect. The variance check ensures the model is actually making patient-specific predictions and hasn't fallen back to constant numbers that produce a 0.5000 leaderboard failure."
         }
+      },
+      {
+        id: 11,
+        title: "The Silver NaN (E02)",
+        text: "E02's Gold AUC climbed to 0.856, yet Silver AUC was NaN every epoch and no checkpoint was saved. Why?",
+        options: [
+          { text: "The GPU ran out of memory during validation.", correct: false },
+          { text: "The metric only kept labels exactly equal to 0 or 1, but Jev silver labels are soft probabilities (0.02, 0.98), so almost every row was filtered out. With checkpoint selection set to Silver, nothing ever counted as 'best'.", correct: true },
+          { text: "Silver studies have no DICOM files.", correct: false },
+          { text: "AUC can't be computed for more than 58 studies.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Exactly. A metric bug that silently disabled saving",
+          correct: "The fix binarizes soft labels at 0.5 (excluding exact-0.5 unknowns) and falls back to Gold AUC if Silver is ever NaN. Lesson: a metric that returns NaN should fail loudly, not quietly turn off checkpointing.",
+          wrong: "Incorrect. The mask (yt == 0.0) | (yt == 1.0) threw away nearly all soft Jev labels, so Silver AUC was NaN and the 'save best checkpoint' branch never ran."
+        }
+      },
+      {
+        id: 12,
+        title: "Free Points from Parity (E03)",
+        text: "E03 raised the LB from 0.882 to 0.885 without any retraining. What changed?",
+        options: [
+          { text: "We submitted at a less busy time of day.", correct: false },
+          { text: "At inference, the ConvNeXt now received the same cache_v1 preprocessing it was trained on (InstanceNumber order, 12–88% slice band, sampled-neighbor 2.5D channels).", correct: true },
+          { text: "We increased the ConvNeXt weight from 0.7 to 1.0.", correct: false },
+          { text: "We turned on horizontal-flip test-time augmentation.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Right. Train/test distribution parity",
+          correct: "A model scores best on inputs that look like its training inputs. The old submission fed the ConvNeXt raw-DICOM-style slices (different order, range and neighbors). Fixing only that was worth +0.003.",
+          wrong: "Incorrect. Same checkpoints, same weights. Only the ConvNeXt's test-time preprocessing changed to match its training cache."
+        }
+      },
+      {
+        id: 13,
+        title: "Why E09 (384px) Failed",
+        text: "E09 was meant to be a 384×384 high-resolution run but scored 0.645 Gold AUC. What went wrong?",
+        options: [
+          { text: "384px is too large for any knee MRI.", correct: false },
+          { text: "The loader read cache_v1, which is stored at 256×256, so the model never saw 384px images. On top of that, EfficientNetV2-S at an effective batch of 1 barely converged.", correct: true },
+          { text: "The Kaggle GPU was swapped to a CPU mid-run.", correct: false },
+          { text: "The learning rate scheduler was reversed.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Correct. Two changes at once, and one was silently ignored",
+          correct: "This is why the 384 plan adds a hard assert that loaded slices are actually 384×384, and keeps the backbone fixed (ConvNeXt-S) so only one thing changes.",
+          wrong: "Incorrect. The run read a 256px cache (so the resolution 'change' never happened) and swapped backbone and batch size at the same time, which confounded the result."
+        }
+      },
+      {
+        id: 14,
+        title: "Report Supervision (E11)",
+        text: "In E11 the image model also learns to predict a 'fingerprint' of the radiology report. Why is this allowed in a code competition with no test-time reports?",
+        options: [
+          { text: "Test studies also come with reports.", correct: false },
+          { text: "The report is only a training-time target. The report head lives outside the saved model, so at inference the model just uses images. The text acts as extra supervision that shapes the image features.", correct: true },
+          { text: "The report text is embedded inside the checkpoint and looked up at test time.", correct: false },
+          { text: "It isn't allowed. E11 breaks the rules.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Yes. Privileged information at training time only",
+          correct: "Reports contain far richer detail than 12 binary labels. Forcing image features to predict them gave our best single-model Silver AUC (0.8571 vs 0.8541). Only training-fold reports are used, so validation stays clean.",
+          wrong: "Incorrect. The report fingerprint is a training-only auxiliary target. The saved model_state_dict is identical in shape to a normal model and needs only pixels at test time."
+        }
+      },
+      {
+        id: 15,
+        title: "Folds Inside a Blend",
+        text: "A 5-fold ensemble might lift our model's standalone AUC by ~0.01. Our model has 15% weight in the CoAtNet blend. What should we expect on the blended LB?",
+        options: [
+          { text: "+0.01, the same as standalone.", correct: false },
+          { text: "+0.05, because ensembles compound.", correct: false },
+          { text: "Much less than +0.01, likely a few thousandths, because the blend is dominated by CoAtNet and our gain only arrives through a 15% share.", correct: true },
+          { text: "Exactly zero, because folds cannot help in a blend.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Right. Gains get diluted by weight",
+          correct: "Judge each new fold by the blend LB, not by standalone silver AUC. A component's improvement is scaled down by its weight, and partly overlaps with what CoAtNet already gets right.",
+          wrong: "Incorrect. With 15% weight, a standalone improvement shrinks a lot in the blend. Expect thousandths, not hundredths."
+        }
+      },
+      {
+        id: 16,
+        title: "Per-Class Weights: the Missing Half",
+        text: "Our model is strong on Baker's cyst (0.924). Why isn't that enough to justify giving it more blend weight for Baker's?",
+        options: [
+          { text: "Baker's cyst isn't one of the 12 targets.", correct: false },
+          { text: "Blend weights depend on how both models compare on the same held-out data. We have no CoAtNet predictions on a clean labelled set, and CoAtNet probably trained on our silver studies, so scoring it there would be inflated.", correct: true },
+          { text: "Per-class weights are against competition rules.", correct: false },
+          { text: "AUC doesn't decompose by class.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Exactly. You need both sides of the comparison",
+          correct: "Macro AUC is a mean of per-class AUCs, so per-class weights do work independently. But knowing one model is strong says nothing about whether the other is weaker. And scoring CoAtNet on data it trained on is leakage.",
+          wrong: "Incorrect. The problem is evidence: we only know our side, and the only clean labels (58 gold studies) are too few for 12 separate weights."
+        }
+      },
+      {
+        id: 17,
+        title: "Pixels vs Slices",
+        text: "A knee MRI at 256px over a ~15cm field of view has ~0.6mm pixels. Slices are ~3mm apart. What does a 384px cache improve?",
+        options: [
+          { text: "Both in-plane detail and the 3mm gap between slices.", correct: false },
+          { text: "Only in-plane detail (to ~0.4mm), and only if the scan's native matrix is larger than 256. The 3mm slice spacing doesn't change.", correct: true },
+          { text: "Only the slice spacing.", correct: false },
+          { text: "Nothing. Resolution never matters for MRI.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Correct. Check native resolution first",
+          correct: "Upsampling a 256-native scan to 384 adds pixels but no information. That's why the plan measures Rows/Columns and PixelSpacing before spending ~30 GPU-hours on 384px folds.",
+          wrong: "Incorrect. In-plane resizing can't create information between slices, and it only adds detail when the original acquisition matrix is larger than the current cache size."
+        }
+      },
+      {
+        id: 18,
+        title: "Plenty of Submissions: the Trap",
+        text: "We have 4 submissions/day and 30–40 left. What's the main danger of using them to tune blend weights?",
+        options: [
+          { text: "Kaggle bans accounts that submit often.", correct: false },
+          { text: "Overfitting the public LB: trying many weight variants finds one that's lucky on the public test subset, then drops on the private LB.", correct: true },
+          { text: "Each submission makes the model worse.", correct: false },
+          { text: "Submissions cost GPU quota.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Yes. Many knobs on a small test = lucky knob",
+          correct: "Our rule: keep a blend change only if it gains > 0.002, and try at most ~3 hand-tuned weight variants. Final submissions are chosen on validation evidence, not only public LB.",
+          wrong: "Incorrect. The public LB is a small sample. The more variants you try against it, the more likely the 'best' one is just noise that disappears on the private LB."
+        }
+      },
+      {
+        id: 19,
+        title: "The Crowded Strategy",
+        text: "Blending a strong public notebook (CoAtNet 0.943) took us from 0.885 to 0.940. Why is this a weak way to try to win?",
+        options: [
+          { text: "Public notebooks are against the rules.", correct: false },
+          { text: "Many teams blend the same public models, so they all land near the same score. Placing above them requires signal they don't have: our own model, labels, or training ideas.", correct: true },
+          { text: "Blending always lowers the private LB.", correct: false },
+          { text: "CoAtNet only works on CPUs.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Right. The blend sets the floor, not the edge",
+          correct: "Keep the public blend as a safety net. The differentiating work is what others can't copy: Jev labels, report supervision, and domain-driven ideas.",
+          wrong: "Incorrect. Public models are allowed and useful, but everyone has them. A gain everyone can get doesn't change your rank."
+        }
+      },
+      {
+        id: 20,
+        title: "The Mirror-Knee Question",
+        text: "We disabled horizontal flip because it 'swaps medial and lateral'. Why might a flip actually be anatomically valid?",
+        options: [
+          { text: "MRI scanners always flip images anyway.", correct: false },
+          { text: "A flipped right knee looks like a left knee. Medial vs lateral is defined by anatomy (e.g. the fibula is lateral), not by image side, so the labels stay correct, provided the dataset contains both left and right knees.", correct: true },
+          { text: "Flipping changes the MRI sequence from T1 to T2.", correct: false },
+          { text: "Medial and lateral targets are scored as one target.", correct: false }
+        ],
+      },
+      {
+        id: 21,
+        title: "The Semantic Transformer Trap",
+        text: "When we tested multilingual-e5-small on opposite diagnoses ('complete ACL tear' vs 'intact ACL without tear'), its cosine similarity was 0.92–0.95 (even higher than character TF-IDF). Why did general sentence transformers fail to separate them?",
+        options: [
+          { text: "The model was trained on corrupted GPU memory.", correct: false },
+          { text: "General sentence transformers are trained on semantic/topical similarity, not clinical negation. Both sentences describe the exact same clinical topic (knee MRI, ACL ligament evaluation), so off-the-shelf sentence embeddings treat them as nearly identical.", correct: true },
+          { text: "E5 models only understand English and cannot process medical abbreviations.", correct: false },
+          { text: "Cosine similarity cannot be computed on 384-dimensional vectors.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Crucial Clinical NLP Insight!",
+          correct: "Standard NLP sentence transformers optimize for document retrieval and topic clustering, where negation is a tiny grammatical detail. Forcing a vision backbone to predict topical embeddings would penalize it for separating tears from intact anatomy! We caught this on CPU before wasting any Kaggle GPU hours.",
+          wrong: "Incorrect. General sentence embeddings capture the overarching topic (knee cruciate evaluation) rather than diagnostic negation, giving torn and intact ligaments dangerously high similarity (>0.92)."
+        }
       }
     ];
 
@@ -394,8 +565,8 @@
       }
 
       const percent = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
-      document.getElementById("score-text").textContent = `Answered: ${totalAnswered} / 10 | Score: ${correctCount}/${totalAnswered} (${percent}%)`;
-      document.getElementById("progress-bar").style.width = `${(totalAnswered / 10) * 100}%`;
+      document.getElementById("score-text").textContent = `Answered: ${totalAnswered} / ${questions.length} | Score: ${correctCount}/${totalAnswered} (${percent}%)`;
+      document.getElementById("progress-bar").style.width = `${(totalAnswered / questions.length) * 100}%`;
     }
 
     renderQuiz();

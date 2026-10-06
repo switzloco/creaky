@@ -43,7 +43,7 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1
 # Otherwise only checkpoints whose full path contains one of these substrings are loaded,
 # e.g. ["creaky-e04-convnext-fold0"] for a solo run. Attached kernel outputs (like
 # training-book) are picked up automatically, so set this for any ablation submission.
-CHECKPOINT_FILTER: List[str] = []
+CHECKPOINT_FILTER: List[str] = ["creaky-e01-convnext-solo"]
 
 # Default class priors if model weights are not found
 DEFAULT_PRIORS = {

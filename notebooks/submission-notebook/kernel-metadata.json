@@ -13,7 +13,7 @@
     "gpu"
   ],
   "dataset_sources": [
-    "nswitzer/creaky-e04-convnext-fold0"
+    "nswitzer/creaky-e01-convnext-solo"
   ],
   "kernel_sources": [
     "nswitzer/training-book"

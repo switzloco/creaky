@@ -1,0 +1,21 @@
+{
+  "id": "nswitzer/training-book-f2",
+  "title": "Training Book F2",
+  "code_file": "training-book-f2.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [
+    "nswitzer/creaky-caching-dataset"
+  ],
+  "competition_sources": [
+    "rsna-knee-abnormality-detection"
+  ],
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
+}

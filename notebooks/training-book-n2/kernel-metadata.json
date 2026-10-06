@@ -1,0 +1,21 @@
+{
+  "id": "nswitzer/training-book-n2",
+  "title": "Training Book N2 (Mirror Flip)",
+  "code_file": "training-book-n2.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [
+    "nswitzer/creaky-caching-dataset"
+  ],
+  "competition_sources": [
+    "rsna-knee-abnormality-detection"
+  ],
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
+}

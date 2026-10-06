@@ -43,11 +43,11 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1
 CONFIG = {
     "backbone": "convnext_small",
     "pretrained": True,
-    "epochs": 10,         # E08: was 6; gold AUC was still rising at epoch 6 in E02 and E04
+    "epochs": 6,          # E11: same as E04 so the only change is the report auxiliary loss
     "batch_size": 2,
     "accum_steps": 2,
     "num_slices": 16,
-    "target_size": (256, 256),
+    "target_size": (256, 256),  # cache_v1 is baked at 256x256 (E09 lesson)
     "lr": 1e-4,
     "weight_decay": 1e-4,
     "dropout": 0.25,
@@ -59,8 +59,15 @@ CONFIG = {
     "select_metric": "silver",
     # Phase 2: Multilabel Stratified 5-Fold CV & Non-destructive Augmentation
     "n_splits": 5,
-    "fold": 0,          # Fold index to train (0..4). E08 reruns fold 0 to compare with E04
-    "augment": True,     # Volume-consistent affine & photometric (no horizontal flip)
+    "fold": 0,          # Fold index to train (0..4). E11 uses fold 0 to compare with E04
+    "augment": True,     # Volume-consistent affine & photometric (affine +-7 deg, scale 0.95-1.05)
+    "hflip": False,      # Task T5 (N2): Mirror-knee horizontal flip. Validated by T3 laterality audit (55% R / 45% L)
+    # E11: Report supervision (IDEAS.md #6C). The image model also predicts a fingerprint of the
+    # radiology report (char TF-IDF -> SVD, language-agnostic). Training-only; the report head is
+    # not part of the model state_dict, so inference/submission code is unchanged.
+    "report_aux": True,
+    "report_dim": 64,
+    "report_aux_weight": 0.5,
 }
 
 
@@ -474,13 +481,21 @@ def cached_plane_to_slabs(arr: np.ndarray) -> np.ndarray:
 class VolumeConsistentAugmenter:
     """Applies affine & photometric augmentations consistently across all slices in a plane.
 
-    CRITICAL: Never applies horizontal flip, to strictly preserve Medial vs. Lateral anatomy!
+    Task T5 (N2): When hflip=True, applies horizontal flip across all slices and planes of a study.
+    Validated by Task T3 laterality audit: 54.6% Right vs 45.4% Left knees in the clinical dataset.
+    Because Medial vs. Lateral is intrinsic joint anatomy (e.g. fibula is lateral, MCL is medial),
+    reflecting a right knee horizontally produces a valid contralateral left knee with identical
+    pathology-to-compartment mappings. Labels do not need to be swapped.
     """
-    def __init__(self, p: float = 0.5):
+    def __init__(self, p: float = 0.5, hflip: bool = False):
         self.p = p
+        self.hflip = hflip
 
-    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+    def __call__(self, tensor: torch.Tensor, flip_this_volume: bool = False) -> torch.Tensor:
         """tensor shape: (K, 3, H, W) - K slices, 3 slab channels, H x W pixels."""
+        if flip_this_volume:
+            tensor = TF.hflip(tensor)
+
         if random.random() > self.p:
             return tensor
 
@@ -500,13 +515,17 @@ class VolumeConsistentAugmenter:
 
 
 class KneeMRITrainingDataset(Dataset):
-    def __init__(self, labels_df: pd.DataFrame, series_df: pd.DataFrame, series_dir: str, num_slices: int = 16, augment: bool = False):
+    def __init__(self, labels_df: pd.DataFrame, series_df: pd.DataFrame, series_dir: str, num_slices: int = 16, augment: bool = False,
+                 hflip: bool = False, report_vecs: Optional[Dict[str, np.ndarray]] = None, report_dim: int = 64):
         self.labels_df = labels_df.reset_index(drop=True)
         self.series_df = series_df
         self.series_dir = series_dir
         self.num_slices = num_slices
         self.augment = augment
-        self.augmenter = VolumeConsistentAugmenter(p=0.5) if augment else None
+        self.hflip = hflip
+        self.report_vecs = report_vecs or {}
+        self.report_dim = report_dim
+        self.augmenter = VolumeConsistentAugmenter(p=0.5, hflip=hflip) if augment else None
         self.plane_col = None
         if not series_df.empty:
             for col in ["Anatomical_Plane", "anatomical_plane", "Plane", "SeriesDescription"]:
@@ -575,10 +594,11 @@ class KneeMRITrainingDataset(Dataset):
 
                 plane_tensors[plane] = load_and_preprocess_series(series_files, target_size=(256, 256), num_slices=self.num_slices)
 
-        # Apply Volume-Consistent Augmentation (train only, per-plane)
+        # Apply Volume-Consistent Augmentation (train only, across all planes)
         if self.augmenter:
+            flip_study = (self.hflip and random.random() < 0.5)
             for plane in ["Sagittal", "Coronal", "Axial"]:
-                plane_tensors[plane] = self.augmenter(plane_tensors[plane])
+                plane_tensors[plane] = self.augmenter(plane_tensors[plane], flip_this_volume=flip_study)
 
         targets = np.array([float(row[t]) for t in TARGET_COLS], dtype=np.float32)
         weights = []
@@ -588,13 +608,20 @@ class KneeMRITrainingDataset(Dataset):
             weights.append(w)
         weights = np.array(weights, dtype=np.float32)
 
+        rvec = self.report_vecs.get(study_uid)
+        has_report = rvec is not None
+        if not has_report:
+            rvec = np.zeros(self.report_dim, dtype=np.float32)
+
         return {
             "study_uid": study_uid,
             "sagittal": plane_tensors["Sagittal"],
             "coronal": plane_tensors["Coronal"],
             "axial": plane_tensors["Axial"],
             "targets": torch.tensor(targets, dtype=torch.float32),
-            "weights": torch.tensor(weights, dtype=torch.float32)
+            "weights": torch.tensor(weights, dtype=torch.float32),
+            "report_vec": torch.tensor(rvec, dtype=torch.float32),
+            "has_report": torch.tensor(float(has_report), dtype=torch.float32),
         }
 
 
@@ -724,7 +751,7 @@ class KneeAnatomicalMoEClassifier(nn.Module):
         feats = feats.view(B, K, self.feat_dim)
         return pool_module(feats)
 
-    def forward(self, sag: torch.Tensor, cor: torch.Tensor, ax: torch.Tensor) -> torch.Tensor:
+    def forward(self, sag: torch.Tensor, cor: torch.Tensor, ax: torch.Tensor, return_features: bool = False):
         h_sag = self._encode_plane(sag, self.sag_pool)
         h_cor = self._encode_plane(cor, self.cor_pool)
         h_ax = self._encode_plane(ax, self.ax_pool)
@@ -751,6 +778,8 @@ class KneeAnatomicalMoEClassifier(nn.Module):
             out_joint[:, 4],   # Fracture
         ], dim=1)
 
+        if return_features:
+            return logits, combined
         return logits
 
 # Backwards compatibility alias
@@ -874,6 +903,33 @@ def assign_multilabel_folds(df: pd.DataFrame, target_cols: list, n_splits: int =
     return folds
 
 
+def build_report_fingerprints(train_csv: str, dim: int = 64, seed: int = 42) -> Dict[str, np.ndarray]:
+    """E11: Turn each radiology report into a small L2-normalised vector ("fingerprint").
+
+    Character n-gram TF-IDF works across the dataset's mix of languages (ES/NL/FR/TR/EL/BG/EN)
+    without a tokenizer or internet. SVD squeezes it to `dim` numbers. Unsupervised, uses only
+    report text (never labels), and only training-fold fingerprints are ever used as targets.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.decomposition import TruncatedSVD
+
+    df = pd.read_csv(train_csv)
+    if "Report" not in df.columns:
+        print("[report_aux] No 'Report' column in train.csv; disabling report supervision.")
+        return {}
+    df = df.dropna(subset=["Report"])
+    texts = [strip_accents(str(t)).lower() for t in df["Report"]]
+    tfidf = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), max_features=60000,
+                            min_df=3, sublinear_tf=True, dtype=np.float32)
+    X = tfidf.fit_transform(texts)
+    svd = TruncatedSVD(n_components=dim, random_state=seed)
+    Z = svd.fit_transform(X).astype(np.float32)
+    Z /= (np.linalg.norm(Z, axis=1, keepdims=True) + 1e-8)
+    print(f"[report_aux] Built {len(Z)} report fingerprints (dim={dim}, "
+          f"SVD explained variance={svd.explained_variance_ratio_.sum():.3f})")
+    return {str(u): z for u, z in zip(df["StudyInstanceUID"].astype(str), Z)}
+
+
 def run_training():
     train_csv, series_csv, series_dir = get_train_paths()
     if not train_csv or not os.path.exists(train_csv):
@@ -915,11 +971,21 @@ def run_training():
         print(f"    {t:18s}: pos {pos:3d} / neg {neg:3d}")
 
     # 3. DataLoaders
+    report_dim = CONFIG.get("report_dim", 64)
+    report_vecs = build_report_fingerprints(train_csv, dim=report_dim) if CONFIG.get("report_aux") else {}
+    # Only training-fold studies get a report target; validation never sees report info.
+    train_report_vecs = {u: report_vecs[u] for u in train_df["StudyInstanceUID"].astype(str) if u in report_vecs}
+    use_report_aux = len(train_report_vecs) > 0
+    print(f"[report_aux] enabled={use_report_aux}, train studies with report target: "
+          f"{len(train_report_vecs)}/{len(train_df)}")
+
     train_ds = KneeMRITrainingDataset(
-        train_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=CONFIG.get("augment", True)
+        train_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=CONFIG.get("augment", True),
+        hflip=CONFIG.get("hflip", False), report_vecs=train_report_vecs, report_dim=report_dim
     )
     val_ds = KneeMRITrainingDataset(
-        val_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=False
+        val_df, series_df, series_dir, num_slices=CONFIG["num_slices"], augment=False,
+        hflip=False, report_dim=report_dim
     )
 
     train_loader = DataLoader(train_ds, batch_size=CONFIG["batch_size"], shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
@@ -933,7 +999,17 @@ def run_training():
         pretrained=CONFIG.get("pretrained", True),
         dropout=CONFIG["dropout"]
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
+    # Report head lives OUTSIDE the model so the saved model_state_dict is identical in shape to
+    # E04's and loads strictly in the unchanged submission notebook.
+    report_head = nn.Sequential(
+        nn.Dropout(CONFIG["dropout"]),
+        nn.Linear(model.feat_dim * 3, 256),
+        nn.SiLU(),
+        nn.Linear(256, report_dim),
+    ).to(device)
+    aux_w = float(CONFIG.get("report_aux_weight", 0.5))
+    params = list(model.parameters()) + (list(report_head.parameters()) if use_report_aux else [])
+    optimizer = torch.optim.AdamW(params, lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=CONFIG["epochs"], eta_min=1e-6)
     criterion = WeightedBCEWithLogitsLoss(label_smoothing=CONFIG["label_smoothing"])
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
@@ -953,7 +1029,9 @@ def run_training():
     print(f"\nStarting Training Loop (Fold {target_fold}/{n_splits})...")
     for epoch in range(1, CONFIG["epochs"] + 1):
         model.train()
+        report_head.train()
         train_loss = 0.0
+        train_cls_loss, train_aux_loss, aux_steps = 0.0, 0.0, 0
         optimizer.zero_grad()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{CONFIG['epochs']} [Train]")
         for step, batch in enumerate(pbar):
@@ -964,9 +1042,24 @@ def run_training():
             weights = batch["weights"].to(device)
 
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-                logits = model(sag, cor, ax)
-                loss = criterion(logits, targets, weights=weights)
-                loss = loss / accum_steps
+                if use_report_aux:
+                    logits, feats = model(sag, cor, ax, return_features=True)
+                else:
+                    logits = model(sag, cor, ax)
+                cls_loss = criterion(logits, targets, weights=weights)
+                loss = cls_loss
+            if use_report_aux:
+                # Cosine distance to the report fingerprint, in fp32 for stability.
+                mask = batch["has_report"].to(device)
+                if mask.sum() > 0:
+                    pred_vec = report_head(feats.float())
+                    cos = F.cosine_similarity(pred_vec, batch["report_vec"].to(device), dim=1)
+                    aux_loss = ((1.0 - cos) * mask).sum() / mask.sum()
+                    loss = loss + aux_w * aux_loss
+                    train_aux_loss += aux_loss.item()
+                    aux_steps += 1
+            train_cls_loss += cls_loss.item()
+            loss = loss / accum_steps
 
             scaler.scale(loss).backward()
 
@@ -1007,6 +1100,9 @@ def run_training():
 
         print(f"\n--- Epoch {epoch}/{CONFIG['epochs']} Summary (Fold {target_fold}) ---")
         print(f"  Train Loss : {avg_train_loss:.4f}")
+        n_steps = max(1, len(train_loader))
+        print(f"  Train cls loss: {train_cls_loss / n_steps:.4f}"
+              + (f" | report aux loss (1-cos): {train_aux_loss / max(1, aux_steps):.4f}" if use_report_aux else ""))
         gold_auc, gold_per_class = print_split_report("Gold  ", y_true[val_is_gold], y_pred[val_is_gold])
         silver_auc, silver_per_class = float("nan"), {}
         if (~val_is_gold).any():
@@ -1039,7 +1135,8 @@ def run_training():
                 "silver_auc": silver_auc,
                 "gold_per_class_auc": gold_per_class,
                 "silver_per_class_auc": silver_per_class,
-                "config": CONFIG
+                "config": CONFIG,
+                "report_head_state_dict": report_head.state_dict() if use_report_aux else None,
             }, best_ckpt_path)
             # Validation predictions of the best epoch, for fitting ensemble weights later.
             preds_df = pd.DataFrame({"StudyInstanceUID": val_uids, "is_gold": val_is_gold})

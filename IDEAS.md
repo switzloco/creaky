@@ -79,3 +79,24 @@ This backlog tracks novel, out-of-the-box ideas to explore during the iteration 
 
 
 
+
+## 7. Low-GPU / Rapid Notebook Explorations
+- **Cleanlab / Confident Learning Label Quality Audit:** Medical ML is bottlenecked by label quality, and the Jev NLP parser makes systematic errors (e.g., 70% false alarm rate on effusion). Use out-of-fold (OOF) predictions to automatically flag the 5% most likely label errors. High leverage, no GPU required.
+- **Anatomical Co-occurrence & Bayesian Post-Processing:** Use medical logic (ACL tears cause "kissing" bone contusions; severe OA destroys the meniscus) as a sanity check. Model joint conditional probabilities via a Bayesian network on model logits to boost Macro AUC without retraining.
+- **OOF Target-Specific Blending:** Optimize class-specific blend weights and temperature scaling on validation predictions (e.g., CoAtNet vs. ConvNeXt on Lateral Meniscus) using Nelder-Mead or `scipy.optimize`. Free leaderboard points.
+- **Frozen Feature Extraction + Fast Probing:** Cache the 768-D embeddings from the vision backbone to disk in one pass. Allows testing dozens of classification heads, MoE router variants, or loss functions in seconds on CPU.
+- **DICOM Metadata Fingerprinting:** Train a fast LightGBM / CatBoost model on DICOM headers (scanner manufacturer, magnetic field strength, etc.) to learn institutional priors (Note: high risk of shortcut learning/overfitting to training distribution).
+
+## 8. Beautiful Visualization Concepts (Notebooks)
+- **The UMAP "Galaxy of Knees":** Extract 768-D embeddings, project to 2D via UMAP, and color by Jev labels. Interactive tooltips (Bokeh/Plotly) show the actual MRI slice and report on hover.
+- **Interactive 3D Voxel Knee Rendering:** Use `scikit-image` marching cubes to threshold 3D MRI arrays (isolating bone/cartilage) and render an interactive 3D mesh via Plotly or PyVista.
+- **Grad-CAM "Slicer" Animation HUD:** An interactive widget with a slider that scrolls through the MRI volume, dynamically overlaying Grad-CAM heatmaps to show the model's visual attention tracking structures like the ACL or meniscus.
+- **Morphological "Eigen-Knees" (PCA Interpolation):** Flatten registered, central sagittal slices and run PCA. Visualize top components to create an animation interpolating from a healthy joint space to severe osteoarthritis.
+- **The Clinical Fingerprint Radar Chart:** Overlay the 64-D visual embedding and 64-D textual embedding (from E11 report-supervision) on a radar chart to visualize how closely the model's visual representation aligns with the radiologist's text.
+
+## 9. Commercial & MedTech Workflows (Stryker Sports Med Context)
+Since the competition weights will be public, the moat is not the algorithm itself, but hardware-software integration and workflow capture:
+- **Automated Surgical Pre-Planning (Software-to-Hardware Pipeline):** The algorithm detects the pathology (e.g., 15mm bucket-handle meniscus tear). Proprietary pre-op software translates this into a Bill of Materials, recommending specific Stryker suture anchors or ACL grafts.
+- **The Smart Arthroscopy Tower (Intraoperative HUD):** The open algorithm highlights hidden cartilage damage on the pre-op MRI. During surgery, proprietary computer vision registers the 3D MRI model to the live camera feed, providing the surgeon with an augmented reality "minimap" to find the tear.
+- **Post-Market Clinical Superiority (Data Moat):** Use the automated model to run retrospective analyses on thousands of post-op MRIs to mathematically prove that Stryker implants lead to better long-term joint preservation (e.g., less effusion) than competitors.
+- **Patient Consent & Education (Sales Enablement):** Provide surgeons with an iPad app that uses the algorithm to turn confusing MRIs into clear, color-coded 3D visualizations, helping patients understand their injuries instantly and accelerating surgical bookings (using Stryker hardware).
