@@ -446,6 +446,11 @@
           { text: "Flipping changes the MRI sequence from T1 to T2.", correct: false },
           { text: "Medial and lateral targets are scored as one target.", correct: false }
         ],
+        feedback: {
+          correctTitle: "Bilateral Knee Anatomical Symmetry",
+          correct: "Since the human skeleton has bilateral symmetry and our audit showed a balanced ~55% Right / 45% Left knee distribution, horizontally flipping a Right knee transforms it into an anatomically sound Left knee. The key is that Medial and Lateral landmarks are defined anatomically (e.g. fibula side = lateral), so the orientation remains physically realistic.",
+          wrong: "Incorrect. The insight is that a flipped right knee is structurally identical to a contralateral left knee, preserving valid anatomy."
+        }
       },
       {
         id: 21,
@@ -461,6 +466,54 @@
           correctTitle: "Crucial Clinical NLP Insight!",
           correct: "Standard NLP sentence transformers optimize for document retrieval and topic clustering, where negation is a tiny grammatical detail. Forcing a vision backbone to predict topical embeddings would penalize it for separating tears from intact anatomy! We caught this on CPU before wasting any Kaggle GPU hours.",
           wrong: "Incorrect. General sentence embeddings capture the overarching topic (knee cruciate evaluation) rather than diagnostic negation, giving torn and intact ligaments dangerously high similarity (>0.92)."
+        }
+      },
+      {
+        id: 22,
+        title: "Multi-Fold Out-of-Fold Averaging",
+        text: "We trained Fold 0, Fold 1, and Fold 2 models, all achieving ~0.851–0.854 validation Macro AUC. Why does averaging their predictions in our ensemble give a higher leaderboard score than submitting any single fold alone?",
+        options: [
+          { text: "Kaggle provides an automated score bonus whenever 3 weights files are attached.", correct: false },
+          { text: "Each fold trains on a distinct 80% partition of cases. While average accuracy is similar, individual fold models make independent, uncorrelated residual errors on ambiguous cases (especially for noisy targets like Lateral Meniscus and Synovitis). Averaging shrinks this prediction variance.", correct: true },
+          { text: "Averaging 3 models triples the spatial resolution of the MRI scans from 256x256 to 768x768.", correct: false },
+          { text: "The folds overwrite each other's weights in GPU memory during inference.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Classical Ensemble Variance Reduction!",
+          correct: "By Condorcet's jury theorem and basic ensemble error decomposition (error = bias + variance + noise), ensembling models trained on distinct data folds cancels out fold-specific sample variance without hurting calibration. It is the most reliable, leak-free way to squeeze an extra +0.002 to +0.005 on competitive leaderboards.",
+          wrong: "Incorrect. The fundamental benefit is variance reduction: uncorrelated prediction errors on difficult or borderline slices cancel out when multiple folds vote together."
+        }
+      },
+      {
+        id: 23,
+        title: "The Mirror Flip Asymmetry Lesson",
+        text: "In E16, we tested horizontal mirror flip on 3D knee MRI scans with medial/lateral label swapping. While Lateral Meniscus Gold AUC edged up slightly (0.697 → 0.705), MCL dropped sharply from 0.836 to 0.739 and Gold Macro AUC fell from 0.848 to 0.812. What was the radiological flaw in naive horizontal flipping?",
+        options: [
+          { text: "MRI scanners reject horizontal flips due to water molecule resonance physics.", correct: false },
+          { text: "While bone landmarks appear symmetrical, 3D sagittal acquisition order (slices stacked from lateral-to-medial or vice versa) and asymmetric soft-tissue collateral ligaments (MCL) depend on directional depth cues. In-plane flipping without slice-depth inversion corrupts the 3D trajectory of collateral ligaments.", correct: true },
+          { text: "Horizontal flips convert MRI scans into CT scans.", correct: false },
+          { text: "Kaggle's evaluation server automatically penalizes flipped test volumes.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "3D Volumetric Depth Matters!",
+          correct: "A knee is not a 2D image; it is a 3D volume acquired along an anatomical axis. In sagittal MRI, slices transition across the knee in a specific anatomical order. Flipping each slice horizontally in 2D while keeping the 3D slice depth order unchanged creates a chimeric, biologically impossible structure that confuses fine ligament detectors.",
+          wrong: "Incorrect. The issue is 3D slice depth: in sagittal MRI, the sequence order across the joint matters as much as in-plane orientation."
+        }
+      },
+      {
+        id: 24,
+        title: "Target-Selective Zero-Weighting vs Sample Dropping",
+        text: "Cleanlab identified 2,634 high-confidence Silver label errors across 1,610 studies. Instead of dropping all 1,610 studies from training, why did we selectively zero-weight only the specific flagged (study, target) pairs via {target}_weight = 0.0?",
+        options: [
+          { text: "Kaggle's competition platform automatically bans notebooks that delete training rows.", correct: false },
+          { text: "In multi-label medical imaging, a study with a noisy pseudo-label on one target (e.g. Lateral Meniscus) still contains valid, high-value supervision for the other 11 targets (e.g. ACL, Effusion, OA). Dropping 1,610 studies would discard over 36% of the dataset. Target-selective zero-weighting zeros the BCE gradient for only the corrupted pathology while retaining training signal on all clean targets.", correct: true },
+          { text: "Zero-weighting automatically doubles the learning rate for the other 11 targets.", correct: false },
+          { text: "Neural networks cannot compute backpropagation gradients if the batch size changes.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Multi-Label Loss Granularity!",
+          correct: "Multi-label BCE decomposes into a sum of per-target binary losses: L = sum_t w_t * BCE(y_t, p_t). Setting w_t = 0.0 for a specific noisy target eliminates harmful gradients without throwing away valuable image data and valid supervision on the other 11 classes.",
+          wrong: "Incorrect. Dropping entire studies discards clean signal on unaffected targets. Setting w_t = 0 surgically silences gradients only for the corrupted label."
         }
       }
     ];

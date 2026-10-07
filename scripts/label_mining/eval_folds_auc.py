@@ -48,6 +48,6 @@ def eval_fold(csv_path, fold_name):
 
 if __name__ == '__main__':
     eval_fold('checkpoints/e04_trained/val_preds_fold_0.csv', 'Fold 0 (E04 Baseline)')
-    eval_fold('checkpoints/e06_trained/val_preds_fold_0.csv', 'Fold 0 (E11 Report-Aux)')
+    eval_fold('checkpoints/n2_trained/val_preds_fold_0.csv', 'Fold 0 (E16 / N2 Mirror Flip)')
     eval_fold('checkpoints/e13_trained/val_preds_fold_1.csv', 'Fold 1 (E13 Report-Aux)')
     eval_fold('checkpoints/e14_trained/val_preds_fold_2.csv', 'Fold 2 (E14 Report-Aux)')

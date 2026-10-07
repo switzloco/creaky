@@ -4,8 +4,8 @@ api = KaggleApi()
 api.authenticate()
 
 subs = api.competition_submissions("rsna-knee-abnormality-detection")
-for s in subs:
-    if s.ref == 56665264:
-        print("Submission details:")
-        for k, v in getattr(s, "__dict__", {}).items():
-            print(f"  {k}: {v}")
+if subs:
+    latest = subs[0]
+    print(f"Latest submission (Ref: {latest.ref}):")
+    for k, v in getattr(latest, "__dict__", {}).items():
+        print(f"  {k}: {v}")

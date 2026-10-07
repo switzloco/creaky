@@ -7,7 +7,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 api = KaggleApi()
 api.authenticate()
 
-logs = api.kernels_logs("nswitzer/submission-notebook")
+slug = sys.argv[1] if len(sys.argv) > 1 else "nswitzer/creaky-0-94-ensemble"
+logs = api.kernels_logs(slug)
 text = ""
 if isinstance(logs, dict):
     text = logs.get("log", str(logs))

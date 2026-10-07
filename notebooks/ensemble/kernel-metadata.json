@@ -14,6 +14,8 @@
   ],
   "dataset_sources": [
     "nswitzer/creaky-e11-reportaux-fold0",
+    "nswitzer/creaky-e11-reportaux-fold1",
+    "nswitzer/creaky-e11-reportaux-fold2",
     "dreaddevelopment/raptor-knee-maxspan",
     "dreaddevelopment/raptor-knee-native384",
     "dreaddevelopment/raptor-knee-native384dense",
