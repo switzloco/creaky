@@ -2,6 +2,7 @@
 
 from .product_recommender import (
     STRYKER_PRODUCT_CATALOG,
+    STRYKER_DISCLAIMER,
     SurgicalTier,
     ProductRecommendation,
     CasePlan,
@@ -10,8 +11,10 @@ from .product_recommender import (
 
 __all__ = [
     "STRYKER_PRODUCT_CATALOG",
+    "STRYKER_DISCLAIMER",
     "SurgicalTier",
     "ProductRecommendation",
     "CasePlan",
     "recommend_stryker_products",
 ]
+

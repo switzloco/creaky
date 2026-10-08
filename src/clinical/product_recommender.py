@@ -1,10 +1,11 @@
 """Stryker Sports Medicine Product Alignment & Clinical Decision Engine.
 
-Translates 12 RSNA knee abnormality binary predictions / probabilities into
-procedurally matched orthopedic surgical implants, back-table instrumentation,
-and clinical case planning based on Stryker's latest Sports Medicine, Joint Preservation,
-and Enabling Technology portfolio (including ProCinch®, AIR+®, VersiTomic®, Iconix®,
-Mako® SmartRobotics, and Triathlon®).
+DISCLAIMER: NOT AN OFFICIAL STRYKER RECOMMENDATION.
+This software module and clinical mapping engine represent an independent, data-driven
+research prototype and educational demonstration tool. All product alignments are derived
+objectively from published orthopedic literature, clinical trials, and publicly available device
+indications. This module is NOT sponsored, endorsed, affiliated with, or an official product
+recommendation of Stryker Corporation or its affiliates.
 
 CLINICAL SCRUTINY NOTE:
 - Acute traumatic bone bruises (contusions) are managed conservatively (RICE, protected weight-bearing).
@@ -18,6 +19,13 @@ CLINICAL SCRUTINY NOTE:
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
+
+STRYKER_DISCLAIMER: str = (
+    "DISCLAIMER: NOT an official Stryker recommendation. Independent data-driven research prototype "
+    "based on clinical literature and publicly available device indications. Not medical advice."
+)
+
+
 
 
 class SurgicalTier(str, Enum):
@@ -57,6 +65,8 @@ class CasePlan:
     consolidated_back_table: List[str]
     highest_surgical_tier: SurgicalTier
     clinical_summary: str
+    disclaimer: str = STRYKER_DISCLAIMER
+
 
 
 # ==============================================================================
@@ -410,5 +420,7 @@ def recommend_stryker_products(
         synergy_patterns=synergies,
         consolidated_back_table=consolidated_kit,
         highest_surgical_tier=highest_tier,
-        clinical_summary=summary
+        clinical_summary=summary,
+        disclaimer=STRYKER_DISCLAIMER
     )
+

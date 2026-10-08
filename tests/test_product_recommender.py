@@ -80,3 +80,13 @@ def test_clean_healthy_knee():
     assert len(plan.synergy_patterns) == 0
     assert plan.highest_surgical_tier == SurgicalTier.CONSERVATIVE_DIAGNOSTIC
     assert "Conservative" in plan.clinical_summary
+
+
+def test_disclaimer_present_and_explicit():
+    findings = {"ACL": 0.95}
+    plan = recommend_stryker_products(findings, threshold=0.5)
+
+    assert hasattr(plan, "disclaimer")
+    assert "NOT an official Stryker recommendation" in plan.disclaimer
+    assert "data" in plan.disclaimer.lower() or "literature" in plan.disclaimer.lower()
+

@@ -1,8 +1,10 @@
 # creaky — RSNA Knee Abnormality Detection
 
 > **Clinical Decision Support & Surgical Product Alignment:**  
-> See [`docs/stryker_sports_medicine_matrix.md`](docs/stryker_sports_medicine_matrix.md) for the complete 12-abnormality Stryker Sports Medicine & Orthopedics product portfolio, decision logic, and back-table kit checklists. Programmatic recommender available via `src/clinical/product_recommender.py`.  
-> Interactive Kaggle Demo: [`knee_mri_patient_explainer.ipynb`](knee_mri_patient_explainer.ipynb).
+> See [`docs/stryker_sports_medicine_matrix.md`](docs/stryker_sports_medicine_matrix.md) for the complete 12-abnormality product portfolio matrix, decision logic, and back-table kit checklists. Programmatic recommender available via `src/clinical/product_recommender.py`.  
+> Interactive Kaggle Demo: [`knee_mri_patient_explainer.ipynb`](knee_mri_patient_explainer.ipynb).  
+> *(Disclaimer: Independent data-driven research prototype based on clinical literature; NOT an official Stryker recommendation or endorsement. Not medical advice.)*
+
 
 Knee investigation for Kaggle RSNA: https://www.kaggle.com/competitions/rsna-knee-abnormality-detection
 

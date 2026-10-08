@@ -1,8 +1,14 @@
 # 🏥 Stryker Sports Medicine & RSNA Knee Abnormality Portfolio Matrix
 
-> **DISCLAIMER:** Research & Demonstration Prototype Only. Not intended for clinical diagnosis, medical advice, or surgical indication. All procedural decisions, implant selections, and surgical techniques must be made independently by a qualified, licensed orthopedic surgeon.
+> ⚠️ **IMPORTANT DISCLAIMER: NOT AN OFFICIAL STRYKER RECOMMENDATION**  
+> This portfolio matrix, clinical decision logic, and surgical product alignments represent an **independent, data-driven research prototype and educational analysis**. They are derived strictly from peer-reviewed orthopedic literature, published clinical indications, and RSNA machine learning challenge data.  
+> - **No Affiliation or Endorsement:** This project is **not** created by, endorsed by, affiliated with, sponsored by, or an official recommendation of **Stryker Corporation** or any of its subsidiaries.  
+> - **Data-Driven Demonstration:** Product pairings represent an algorithmic alignment connecting radiological abnormalities to standard orthopedic device categories and surgical techniques documented in public orthopedic literature.  
+> - **Not Medical Advice:** Not intended for clinical diagnosis, patient management, treatment planning, or surgical indication. All procedural decisions, implant selections, and surgical techniques must be made independently by a qualified, board-certified orthopedic surgeon.  
+> - **Trademarks:** All product names, registered trademarks, logos, and brands (e.g., Stryker®, ProCinch®, AIR+®, VersiTomic®, Iconix®, Mako®, Triathlon®, BIO4®, Vitoss®) are the property of their respective owners.
 
-This document details the clinical product mapping and automated decision logic that connects the **12 binary/probabilistic MRI findings** from the RSNA Knee Abnormality Detection challenge directly to **Stryker Sports Medicine, Joint Preservation, Trauma, and Robotic-Arm Assisted Arthroplasty systems**.
+This document details the clinical product mapping and automated decision logic that connects the **12 binary/probabilistic MRI findings** from the RSNA Knee Abnormality Detection challenge to orthopedic sports medicine, joint preservation, trauma, and robotic-arm assisted arthroplasty systems.
+
 
 ---
 
@@ -124,3 +130,8 @@ for item in plan.consolidated_back_table:
 - **Triathlon Medial Stabilized Insert:** Introduced in 2026 for patient-specific kinematic stability.
 - **ProCinch® Adjustable Suspensory Button:** Features *IntelliBraid™* continuous loop braid to eliminate loop slippage and deliver maximum ultimate tensile strength under cyclic loading.
 - **AIR+® All-Inside Meniscal Repair System:** Ergonomic, single-handed delivery with an shapeable needle for 360° meniscal access.
+ 
++### D. Data-Driven Nature & Non-Affiliation
++- **Evidence- & Imaging-Driven Logic:** The algorithmic mappings translate 12 specific structural MRI lesions detected by computer vision models (such as deep bone marrow signal alteration, cruciate discontinuity, and fibrocartilage tears) into standard orthopedic intervention tiers.
++- **Independence:** These recommendations are algorithmic and data-derived, and must never be misconstrued as commercial marketing material or manufacturer-authorized clinical practice guidelines from Stryker Corporation.
+
