@@ -13,7 +13,7 @@
     "gpu"
   ],
   "dataset_sources": [
-    "nswitzer/creaky-e11-reportaux-fold0",
+    "nswitzer/creaky-e18-cleanlab-fold0",
     "nswitzer/creaky-e11-reportaux-fold1",
     "nswitzer/creaky-e11-reportaux-fold2",
     "dreaddevelopment/raptor-knee-maxspan",

@@ -515,8 +515,74 @@
           correct: "Multi-label BCE decomposes into a sum of per-target binary losses: L = sum_t w_t * BCE(y_t, p_t). Setting w_t = 0.0 for a specific noisy target eliminates harmful gradients without throwing away valuable image data and valid supervision on the other 11 classes.",
           wrong: "Incorrect. Dropping entire studies discards clean signal on unaffected targets. Setting w_t = 0 surgically silences gradients only for the corrupted label."
         }
+      },
+      {
+        id: 25,
+        title: "Peripheral Slice Banding and Anatomical Asymmetry",
+        text: "In our initial slice preprocessing (cache_fast_slices.py), we discarded the outer 12% of slices on both edges of the MRI volume (from index 0.12 * N to 0.88 * N) assuming they were just skin and subcutaneous fat. Why did this slice pruning disproportionately hurt the Lateral Meniscus detector (~0.69 Gold AUC) while having virtually zero negative impact on the ACL (~0.93 Gold AUC)?",
+        options: [
+          { text: "The ACL is located in the central intercondylar notch of the knee joint, which remains fully intact within the central 76% volume band. In contrast, the lateral meniscus is a smaller C-shaped structure situated at the extreme lateral periphery of the joint; cutting off the outer 12% of sagittal slices can truncate the lateral meniscus body ('bow-tie' appearance) and peripheral horn attachments where tears occur.", correct: true },
+          { text: "Lateral meniscus tears only occur in patients who were scanned with poor contrast agents.", correct: false },
+          { text: "The ACL is made of fibrocartilage that can be seen even through subcutaneous fat, whereas the meniscus is bone.", correct: false },
+          { text: "Slice banding is only applied on coronal images, never on sagittal images.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Anatomical Geometry and Spatial Prior!",
+          correct: "Central structures like the ACL and PCL sit deep within the intercondylar notch (around slices 10-18 of 28). The lateral meniscus is located at the extreme outer edge of the tibial plateau. Chopping off the first 3-4 slices of a lateral-to-medial sagittal acquisition directly slices away the lateral meniscus body and peripheral rim!",
+          wrong: "Incorrect. The issue is spatial geometry: the ACL is dead-center in the joint, while the lateral meniscus is at the extreme lateral periphery where outer slices were truncated."
+        }
+      },
+      {
+        id: 26,
+        title: "Pulse Sequence Prioritization: Fluid-Sensitive vs T1 Sagittal MRI",
+        text: "An audit of our pre-cached training dataset revealed that in 56 out of 58 Gold studies (96.6%), multiple sagittal series were present in train_series.csv. Because the caching dictionary naively took the last row in the CSV, 39.7% of Gold studies were cached using non-fluid-sensitive (T1) sequences instead of available fluid-sensitive (T2/PD fat-suppressed) sequences. Why is fluid sensitivity critical for diagnosing meniscus tears?",
+        options: [
+          { text: "T1 sequences cannot be converted into JPEG or PNG image formats by computer vision libraries.", correct: false },
+          { text: "A meniscus tear on MRI is defined by high-intensity joint fluid or edema penetrating the low-intensity (dark) triangular fibrocartilage. On fluid-sensitive fat-suppressed sequences (T2/PD FS), fluid shines bright white against dark fibrocartilage, creating high contrast. On non-fluid T1 sequences, fluid appears dark and adjacent marrow fat appears bright, making tears virtually indistinguishable from surrounding tissue.", correct: true },
+          { text: "Fluid-sensitive scans have twice as many pixels as T1 scans.", correct: false },
+          { text: "Neural networks can only calculate backpropagation gradients on images that were scanned with intravenous gadolinium.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "MRI Contrast Physics & Pathology Visualization!",
+          correct: "Normal menisci are uniformly low-signal (dark black) on all MRI sequences. A tear requires synovial fluid to enter the defect, which is hyperintense (bright white) only on fluid-sensitive sequences (T2, proton density with fat saturation). Feeding T1-weighted slices blinds the model to fluid-filled tear clefts, causing severe False Negatives!",
+          wrong: "Incorrect. The key is MRI contrast physics: synovial fluid is bright white only on fluid-sensitive sequences, allowing tears within dark meniscus fibrocartilage to be seen."
+        }
+      },
+      {
+        id: 27,
+        title: "Multi-Planar 768-D Latent Space & Marching Cubes 3D Voxel Meshing",
+        text: "In our 3D visualization and manifold exploration sprint, we projected our 768-D multi-plane embeddings (256-D Sagittal + 256-D Coronal + 256-D Axial) into 2D UMAP space and thresholded MRI voxel volumes using Marching Cubes. What fundamental clinical and topological principle causes acute ACL tears and chronic Osteoarthritis (OA) to form completely separated 'islands' in 768-D space, and how does Marching Cubes isolate articular bone from soft cartilage?",
+        options: [
+          { text: "ACL tears are acute athletic trauma occurring in young joints with intact, thick articular cartilage and normal joint spaces (high Sagittal signal, low coronal narrowing), whereas OA is a chronic, whole-organ degenerative disease characterized by joint space narrowing, subchondral sclerosis, and marginal osteophytes (high Coronal/Axial degeneration signal, intact cruciate ligaments). In Marching Cubes, density thresholding at high values (T ≈ 150) isolates compact subchondral bone, while intermediate values (T ≈ 95) capture the articular cartilage and meniscal wedge contours.", correct: true },
+          { text: "ACL tears only appear in right knees, while Osteoarthritis only appears in left knees, creating a coordinate flip in UMAP.", correct: false },
+          { text: "Marching Cubes requires GPU shaders that can only render bones if the patient was given intravenous barium contrast.", correct: false },
+          { text: "UMAP clusters are purely random noise artifacts generated by gradient descent and have no correlation with medical anatomy.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Biomechanical Etiology & 3D Isosurface Manifolds!",
+          correct: "The 768-D latent manifold naturally decouples acute ligamentous trauma from chronic degenerative cartilage wear. Patients with isolated ACL tears have pristine joint spaces and zero subchondral sclerosis, separating them from the high-dimensional OA cluster. Marching Cubes exploits the physical gradient of MRI signal intensities: compact cortical and subchondral bone plates have distinct boundary thresholds compared to intermediate-signal articular cartilage and synovial fluid!",
+          wrong: "Incorrect. The separation stems from distinct pathophysiological etiologies (acute ligamentous trauma in preserved joints vs. chronic degenerative articular joint space loss), and Marching Cubes uses voxel density thresholds to isolate bone from soft tissue."
+        }
+      },
+      {
+        id: 28,
+        title: "Dual-Resolution Foundation Ensembles & Pathology-Specific Routing",
+        text: "In Experiment E19, upgrading our ensemble foundation floor to Apex Grandmaster V5 boosted our leaderboard score from 0.940 to 0.949 (+0.009). Why does fusing a 384px CoAtNet with a 2.5D ConvNeXt Multiple-Instance Learning (MIL) reader and applying pathology-specific weight routing outperform a single uniform ensemble weight across all 12 findings?",
+        options: [
+          { text: "High-resolution (384px) CoAtNet excels at resolving fine 1-2mm planar details (e.g. subtle meniscal root tears, focal cartilage defects), whereas 2.5D ConvNeXt MIL excels at volumetric through-plane integration across multiple slices (ideal for diffuse bone marrow contusions, Baker's cysts, and extensive joint effusions). Per-pathology routing dynamically assigns higher weight to the specific architecture best matched to each finding's physical imaging footprint (e.g. 0.48 on Baker's and 0.38 on Contusion for MIL, while keeping 0.92 CoAtNet anchor for subtle Meniscus tears), maximizing Macro AUC across diverse clinical presentations.", correct: true },
+          { text: "Running two backbones causes Kaggle's evaluation server to double the patient count in the test set.", correct: false },
+          { text: "CoAtNet can only process Sagittal views, while ConvNeXt can only process Axial views.", correct: false },
+          { text: "Pathology routing binarizes all probabilities to 0 or 1, which guarantees a perfect AUC score.", correct: false }
+        ],
+        feedback: {
+          correctTitle: "Architectural Complementarity & Clinical Alignment!",
+          correct: "Different knee pathologies have vastly different imaging footprints: meniscal and ligament tears are focal, sub-millimeter planar findings best resolved by 384px vision transformers; effusions and contusions are volumetric, diffuse signal alterations best pooled by 2.5D slice-attention MIL networks. Finding-specific routing leverages each model's true mechanical advantage!",
+          wrong: "Incorrect. The performance gain comes from architectural synergy: high-resolution transformers capture focal ligament/meniscal tears, while 2.5D MIL readers capture 3D fluid and bone contusions."
+        }
       }
     ];
+
+
 
     let userAnswers = {};
 

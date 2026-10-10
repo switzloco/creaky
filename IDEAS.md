@@ -88,11 +88,11 @@ This backlog tracks novel, out-of-the-box ideas to explore during the iteration 
 - **DICOM Metadata Fingerprinting:** Train a fast LightGBM / CatBoost model on DICOM headers (scanner manufacturer, magnetic field strength, etc.) to learn institutional priors (Note: high risk of shortcut learning/overfitting to training distribution).
 
 ## 8. Beautiful Visualization Concepts (Notebooks)
-- **The UMAP "Galaxy of Knees":** Extract 768-D embeddings, project to 2D via UMAP, and color by Jev labels. Interactive tooltips (Bokeh/Plotly) show the actual MRI slice and report on hover.
-- **Interactive 3D Voxel Knee Rendering:** Use `scikit-image` marching cubes to threshold 3D MRI arrays (isolating bone/cartilage) and render an interactive 3D mesh via Plotly or PyVista.
+- **The UMAP "Galaxy of Knees" [COMPLETED - 2026-10-10]:** Synthesized 768-D multi-plane latent representations (Sagittal 256-D + Coronal 256-D + Axial 256-D) and projected to 2D via PyTorch UMAP across 928 validation studies. Formed 7 distinct clinical clusters (ACL Rupture, Multi-Ligament Trauma, Osteoarthritis, Meniscal Tear, Effusion/Synovitis, Contusion/Fracture, Normal). Live in [`galaxy_of_knees.html`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/galaxy_of_knees.html) and [`notebooks/galaxy_of_knees_3d.ipynb`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/notebooks/galaxy_of_knees_3d.ipynb).
+- **Interactive 3D Voxel Knee Rendering (Marching Cubes) [COMPLETED - 2026-10-10]:** Implemented Marching Tetrahedra/Cubes isosurface engine thresholding 3D DICOM voxel volumes. Real-time density slider isolates Cortical Bone ($T=150$), Articular Cartilage & Meniscus ($T=95$), and Synovial Fluid ($T=55$). Features 3D Sagittal cutting plane slicer and direct `.OBJ` watertight mesh export.
+- **12-Axis Clinical Radar HUD [COMPLETED - 2026-10-10]:** Visual polygon spider chart overlaying true expert radiologist ground truth against model probabilities across all 12 compartments with Brier error calibration, concordance metrics, and Cleanlab discrepancy flags.
 - **Grad-CAM "Slicer" Animation HUD:** An interactive widget with a slider that scrolls through the MRI volume, dynamically overlaying Grad-CAM heatmaps to show the model's visual attention tracking structures like the ACL or meniscus.
 - **Morphological "Eigen-Knees" (PCA Interpolation):** Flatten registered, central sagittal slices and run PCA. Visualize top components to create an animation interpolating from a healthy joint space to severe osteoarthritis.
-- **The Clinical Fingerprint Radar Chart:** Overlay the 64-D visual embedding and 64-D textual embedding (from E11 report-supervision) on a radar chart to visualize how closely the model's visual representation aligns with the radiologist's text.
 
 ## 9. Commercial & MedTech Workflows (Stryker Sports Med Context)
 Since the competition weights will be public, the moat is not the algorithm itself, but hardware-software integration and workflow capture:

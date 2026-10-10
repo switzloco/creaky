@@ -4,8 +4,8 @@ nb_path = 'notebooks/ensemble/creaky-0-94-ensemble.ipynb'
 with open(nb_path, 'r', encoding='utf-8') as f:
     nb = json.load(f)
 
-old_str = 'CHECKPOINT_FILTER: List[str] = ["creaky-e11-reportaux-fold0"]'
-new_str = 'CHECKPOINT_FILTER: List[str] = ["creaky-e11-reportaux-fold0", "creaky-e11-reportaux-fold1", "creaky-e11-reportaux-fold2"]'
+old_str = 'CHECKPOINT_FILTER: List[str] = ["creaky-e11-reportaux-fold0", "creaky-e11-reportaux-fold1", "creaky-e11-reportaux-fold2"]'
+new_str = 'CHECKPOINT_FILTER: List[str] = ["creaky-e18-cleanlab-fold0", "creaky-e11-reportaux-fold1", "creaky-e11-reportaux-fold2"]'
 
 found = False
 for cell in nb['cells']:

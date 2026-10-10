@@ -332,3 +332,19 @@ Medicine
 Roc Auc Score
 Table of Contents
 Rules accepted. Good luck!
+
+---
+
+## 🌌 Interactive "Galaxy of Knees" & 3D Joint Visualizations (Side Project Sprint)
+
+A zero-GPU clinical exploration tool and visual intelligence suite:
+1. **The UMAP "Galaxy of Knees"**: 768-D multi-plane latent embeddings (256-D Sagittal + 256-D Coronal + 256-D Axial from our ConvNeXt MoE backbone) projected into interactive 2D UMAP space, revealing 7 distinct clinical pathology islands (ACL Rupture, Multi-Ligament Trauma Triad, Osteoarthritis, Meniscal Tears, Effusion/Synovitis, Contusion/Fracture, Normal Reference).
+2. **12-Axis Clinical Radar HUD**: Visual polygon chart comparing true expert radiologist ground truth against model predicted probabilities across all 12 compartments with live Brier calibration, concordance index, and Cleanlab discrepancy alerts.
+3. **Marching Cubes 3D Joint Viewer**: Watertight 3D isosurface mesh generation directly from MRI voxel densities, with real-time density thresholding (Cortical Bone $T=150$, Articular Cartilage $T=95$, Fluid $T=55$), 3D Sagittal cutting plane slicer, and `.OBJ` export for 3D printing.
+
+### Files & Entry Points:
+- [`galaxy_of_knees.html`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/galaxy_of_knees.html): Standalone, 60fps WebGL single-file web application. Open directly in any web browser!
+- [`notebooks/galaxy_of_knees_3d.ipynb`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/notebooks/galaxy_of_knees_3d.ipynb): Interactive Plotly & WebGL Jupyter notebook runnable on CPU / TPU without GPU quota.
+- [`scripts/generate_galaxy_and_3d_data.py`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/scripts/generate_galaxy_and_3d_data.py): Data extraction, PyTorch UMAP optimization, and Marching Cubes pipeline.
+- [`tests/test_galaxy_and_3d.py`](file:///c:/Users/nswitzer/Antigrav%20Proj/creaky/tests/test_galaxy_and_3d.py): Unit test suite auditing coordinates, radar HUD, and 3D mesh topology.
+
