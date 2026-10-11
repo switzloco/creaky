@@ -50,6 +50,10 @@ except Exception as e:
 
 # 5. Evaluate Performance
 print("\nPhase 5: Evaluating Lateral Meniscus and Macro AUC on Gold Studies...", flush=True)
-eval_cmd = f'cmd.exe /c "uv run python -c \\"import pandas as pd, numpy as np; from sklearn.metrics import roc_auc_score; df=pd.read_csv(\'{out_dir}/val_preds_fold_0.csv\'); gold=df[df[\'is_gold\']==True]; print(\'Lateral Meniscus Gold AUC:\', roc_auc_score(gold[\'Lateral Meniscus\'], gold[\'pred_Lateral Meniscus\'])); targets=[\'ACL\',\'MCL\',\'Medial Meniscus\',\'Lateral Meniscus\',\'Medial OA\',\'Lateral OA\',\'PF OA\',\'Effusion\',\'Synovitis\',\'Baker\\\'s\',\'Contusion\',\'Fracture\']; print(\'Gold Macro AUC:\', np.mean([roc_auc_score(gold[t], gold[\'pred_\'+t]) for t in targets]))\\""'
-os.system(eval_cmd)
+try:
+    from scripts.evaluate_n4_fold0 import evaluate_fold0
+    evaluate_fold0(os.path.join(out_dir, "val_preds_fold_0.csv"))
+except Exception as e:
+    print(f"Error during in-process evaluation: {e}")
+    os.system(f'uv run python scripts/evaluate_n4_fold0.py "{out_dir}/val_preds_fold_0.csv"')
 print("\n=== Track N4 Pipeline Execution Finished ===", flush=True)
