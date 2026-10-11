@@ -38,5 +38,7 @@ kaggle_datasets/
 kaggle_push*/
 e*_output/
 scratch/
+temp*/
+*.npz
 kernels.csv
 
