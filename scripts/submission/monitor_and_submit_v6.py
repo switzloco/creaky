@@ -25,10 +25,10 @@ while True:
             print("\n=== Kernel Run Complete! Submitting Apex Grandmaster V6 to RSNA Competition ===", flush=True)
             res = api.competition_submit_code(
                 file_name="submission.csv",
-                message="E20: Apex Grandmaster V6 Target-Adaptive Class-Specific Weights Blend (Validated +0.0244 Gold AUC Lift)",
+                message="E21: Apex Grandmaster V6 True Synergy Blend (Target-Adaptive Class Weights + Cleanlab E18 Ensemble)",
                 competition="rsna-knee-abnormality-detection",
                 kernel=kernel_slug,
-                kernel_version=2
+                kernel_version=3
             )
             print("Submission response:", res, flush=True)
             print("Successfully submitted Apex V6 to competition leaderboard!", flush=True)
