@@ -31,11 +31,22 @@ def evaluate_fold0(csv_path="checkpoints/n4_cleanlab_trained/val_preds_fold_0.cs
         if pred_col not in df.columns or t not in df.columns:
             continue
             
-        full_auc = roc_auc_score(df[t], df[pred_col]) if len(np.unique(df[t])) > 1 else np.nan
-        gold_auc = roc_auc_score(gold_df[t], gold_df[pred_col]) if len(np.unique(gold_df[t])) > 1 else np.nan
-        brier = brier_score_loss(gold_df[t], gold_df[pred_col])
-        pos_count = int(gold_df[t].sum())
-        total_count = len(gold_df)
+        yt = df[t].values
+        yp = df[pred_col].values
+        mask = (yt != 0.5)
+        yt_bin = (yt[mask] >= 0.5).astype(int)
+        yp_masked = yp[mask]
+        full_auc = roc_auc_score(yt_bin, yp_masked) if len(np.unique(yt_bin)) > 1 else np.nan
+
+        yt_g = gold_df[t].values
+        yp_g = gold_df[pred_col].values
+        mask_g = (yt_g != 0.5)
+        yt_g_bin = (yt_g[mask_g] >= 0.5).astype(int)
+        yp_g_masked = yp_g[mask_g]
+        gold_auc = roc_auc_score(yt_g_bin, yp_g_masked) if len(np.unique(yt_g_bin)) > 1 else np.nan
+        brier = brier_score_loss(yt_g_bin, yp_g_masked) if len(np.unique(yt_g_bin)) > 1 else np.nan
+        pos_count = int(yt_g_bin.sum())
+        total_count = len(yt_g_bin)
         
         results.append({
             "Target": t,
