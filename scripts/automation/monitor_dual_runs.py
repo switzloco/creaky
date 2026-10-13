@@ -12,14 +12,14 @@ def run_dual_monitor():
     api.authenticate()
 
     jobs = {
-        "Fold 1 (TPU)": {
-            "slug": "nswitzer/training-book-n4-cleanlab-tpu-fold-1",
+        "Fold 1 (GPU)": {
+            "slug": "nswitzer/training-book-n4-cleanlab-fold-1",
             "fold": 1,
             "done": False,
         },
-        "Fold 2 (GPU)": {
-            "slug": "nswitzer/training-book-n4-cleanlab-fold-2",
-            "fold": 2,
+        "Fold 1 (TPU)": {
+            "slug": "nswitzer/training-book-n4-cleanlab-tpu-fold-1",
+            "fold": 1,
             "done": False,
         }
     }

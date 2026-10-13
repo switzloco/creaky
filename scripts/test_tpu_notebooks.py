@@ -3,7 +3,7 @@ import ast
 from pathlib import Path
 
 def test_notebooks():
-    for f in [1, 2]:
+    for f in [1, 2, 3]:
         p = Path(f"notebooks/training-book-n4-tpu-f{f}/training-book-n4-tpu-f{f}.ipynb")
         nb = json.loads(p.read_text(encoding="utf-8"))
         code = "".join("".join(c["source"]) if isinstance(c["source"], list) else c["source"] for c in nb["cells"] if c["cell_type"] == "code")

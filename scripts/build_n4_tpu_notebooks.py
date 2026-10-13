@@ -51,6 +51,22 @@ def build_tpu_notebook(fold_num: int):
             if old_env in code_text:
                 code_text = code_text.replace(old_env, new_env)
 
+            # (b.2) Safe pydicom import for TPU minimal container
+            old_pydicom = 'import pydicom'
+            new_pydicom = (
+                'import subprocess\n'
+                'try:\n'
+                '    import pydicom\n'
+                'except ImportError:\n'
+                '    try:\n'
+                '        subprocess.run(["pip", "install", "--quiet", "pydicom"], check=False)\n'
+                '        import pydicom\n'
+                '    except Exception:\n'
+                '        pydicom = None'
+            )
+            if old_pydicom in code_text:
+                code_text = code_text.replace(old_pydicom, new_pydicom)
+
             # (c) Device discovery
             old_device = 'device = torch.device("cuda" if torch.cuda.is_available() else "cpu")\n    print(f"\\nTraining on Device: {device}")'
             new_device = (
@@ -189,5 +205,5 @@ def build_tpu_notebook(fold_num: int):
     print(f"Generated {out_meta}")
 
 if __name__ == "__main__":
-    for f in [1, 2]:
+    for f in [1, 2, 3]:
         build_tpu_notebook(f)

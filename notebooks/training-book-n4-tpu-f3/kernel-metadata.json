@@ -1,0 +1,20 @@
+{
+  "id": "nswitzer/training-book-n4-cleanlab-tpu-fold-3",
+  "title": "Training Book N4 Cleanlab TPU (Fold 3)",
+  "code_file": "training-book-n4-tpu-f3.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": true,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [
+    "nswitzer/creaky-caching-dataset-n4"
+  ],
+  "competition_sources": [
+    "rsna-knee-abnormality-detection"
+  ],
+  "model_sources": []
+}
