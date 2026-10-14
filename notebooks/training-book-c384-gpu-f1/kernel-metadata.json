@@ -1,0 +1,20 @@
+{
+  "id": "nswitzer/training-book-c384-gpu-fold-1",
+  "title": "Training Book C384 Cleanlab GPU (Fold 1)",
+  "code_file": "training-book-c384-gpu-f1.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [
+    "nswitzer/creaky-caching-dataset-n4-384"
+  ],
+  "competition_sources": [
+    "rsna-knee-abnormality-detection"
+  ],
+  "model_sources": []
+}
