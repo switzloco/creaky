@@ -31,6 +31,8 @@
       padding: 1.25rem;
       margin-bottom: 2rem;
       display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
       justify-content: space-between;
       align-items: center;
       position: sticky;
@@ -38,8 +40,36 @@
       z-index: 50;
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
     }
+    .banner-info { flex: 1; min-width: 250px; }
+    .banner-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .banner-btn {
+      background: #0f172a;
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      padding: 0.5rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .banner-btn:hover {
+      background: var(--primary);
+      color: #0f172a;
+    }
+    .banner-btn-secondary {
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+    .banner-btn-secondary:hover {
+      background: #334155;
+      color: var(--text);
+    }
     .score-text { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
-    .progress-bar-bg { width: 50%; height: 10px; background: #334155; border-radius: 5px; overflow: hidden; }
+    .progress-bar-bg { width: 100%; height: 10px; background: #334155; border-radius: 5px; overflow: hidden; margin-top: 0.5rem; }
     .progress-bar-fill { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease; }
     .question-card {
       background: var(--card-bg);
@@ -121,9 +151,16 @@
     </header>
 
     <div class="score-banner">
-      <div class="score-text" id="score-text">Answered: 0 / 21 | Score: 0%</div>
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" id="progress-bar"></div>
+      <div class="banner-info">
+        <div class="score-text" id="score-text">Answered: 0 / 28 | Score: 0%</div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button id="btn-copy-report" class="banner-btn" onclick="copyReport()" title="Copy markdown summary for Antigravity">📋 Copy Report for Antigravity</button>
+        <button id="btn-download-json" class="banner-btn" onclick="downloadJSON()" title="Download quiz results as JSON">💾 Export JSON</button>
+        <button id="btn-reset-quiz" class="banner-btn banner-btn-secondary" onclick="resetQuiz()" title="Clear answers and start over">🔄 Reset</button>
       </div>
     </div>
 
@@ -585,8 +622,29 @@
 
 
     let userAnswers = {};
+    const STORAGE_KEY = "rsna_knee_quiz_answers_v1";
+
+    function loadSavedAnswers() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          userAnswers = JSON.parse(saved);
+        }
+      } catch (e) {
+        console.warn("Could not load answers from localStorage:", e);
+      }
+    }
+
+    function saveAnswers() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(userAnswers));
+      } catch (e) {
+        console.warn("Could not save answers to localStorage:", e);
+      }
+    }
 
     function renderQuiz() {
+      loadSavedAnswers();
       const container = document.getElementById("quiz-container");
       container.innerHTML = "";
 
@@ -615,7 +673,7 @@
           btn.className = "option-btn";
           btn.id = `opt-${q.id}-${optIndex}`;
           btn.innerHTML = `<strong>${String.fromCharCode(65 + optIndex)})</strong> <span>${opt.text}</span>`;
-          btn.onclick = () => selectOption(q.id, optIndex);
+          btn.onclick = () => selectOption(q.id, optIndex, true);
           optionsList.appendChild(btn);
         });
 
@@ -630,43 +688,56 @@
 
         container.appendChild(card);
       });
+
+      // Restore previously saved answers
+      for (let qId in userAnswers) {
+        selectOption(parseInt(qId, 10), userAnswers[qId], false);
+      }
+
+      updateScore();
     }
 
-    function selectOption(qId, selectedIndex) {
+    function selectOption(qId, selectedIndex, save = true) {
       const question = questions.find(q => q.id === qId);
+      if (!question) return;
       userAnswers[qId] = selectedIndex;
+      if (save) {
+        saveAnswers();
+      }
 
       // Disable all buttons for this question
       question.options.forEach((_, idx) => {
         const btn = document.getElementById(`opt-${qId}-${idx}`);
-        btn.disabled = true;
+        if (btn) btn.disabled = true;
       });
 
       const selectedBtn = document.getElementById(`opt-${qId}-${selectedIndex}`);
       const isCorrect = question.options[selectedIndex].correct;
 
       const feedbackBox = document.getElementById(`feedback-${qId}`);
-      feedbackBox.style.display = "block";
+      if (feedbackBox) {
+        feedbackBox.style.display = "block";
 
-      if (isCorrect) {
-        selectedBtn.classList.add("selected-correct");
-        feedbackBox.className = "feedback-box correct";
-        feedbackBox.innerHTML = `
-          <div class="feedback-title">✓ ${question.feedback.correctTitle}</div>
-          <div class="feedback-details">${question.feedback.correct}</div>
-        `;
-      } else {
-        selectedBtn.classList.add("selected-wrong");
-        // Highlight the correct one
-        const correctIdx = question.options.findIndex(o => o.correct);
-        const correctBtn = document.getElementById(`opt-${qId}-${correctIdx}`);
-        correctBtn.classList.add("selected-correct");
+        if (isCorrect) {
+          if (selectedBtn) selectedBtn.classList.add("selected-correct");
+          feedbackBox.className = "feedback-box correct";
+          feedbackBox.innerHTML = `
+            <div class="feedback-title">✓ ${question.feedback.correctTitle}</div>
+            <div class="feedback-details">${question.feedback.correct}</div>
+          `;
+        } else {
+          if (selectedBtn) selectedBtn.classList.add("selected-wrong");
+          // Highlight the correct one
+          const correctIdx = question.options.findIndex(o => o.correct);
+          const correctBtn = document.getElementById(`opt-${qId}-${correctIdx}`);
+          if (correctBtn) correctBtn.classList.add("selected-correct");
 
-        feedbackBox.className = "feedback-box wrong";
-        feedbackBox.innerHTML = `
-          <div class="feedback-title">✗ Needs Review</div>
-          <div class="feedback-details">${question.feedback.wrong}</div>
-        `;
+          feedbackBox.className = "feedback-box wrong";
+          feedbackBox.innerHTML = `
+            <div class="feedback-title">✗ Needs Review</div>
+            <div class="feedback-details">${question.feedback.wrong}</div>
+          `;
+        }
       }
 
       updateScore();
@@ -678,14 +749,125 @@
 
       for (let qId in userAnswers) {
         const q = questions.find(item => item.id == qId);
-        if (q.options[userAnswers[qId]].correct) {
+        if (q && q.options[userAnswers[qId]] && q.options[userAnswers[qId]].correct) {
           correctCount++;
         }
       }
 
       const percent = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
-      document.getElementById("score-text").textContent = `Answered: ${totalAnswered} / ${questions.length} | Score: ${correctCount}/${totalAnswered} (${percent}%)`;
-      document.getElementById("progress-bar").style.width = `${(totalAnswered / questions.length) * 100}%`;
+      const scoreEl = document.getElementById("score-text");
+      const progEl = document.getElementById("progress-bar");
+      if (scoreEl) {
+        scoreEl.textContent = `Answered: ${totalAnswered} / ${questions.length} | Score: ${correctCount}/${totalAnswered} (${percent}%)`;
+      }
+      if (progEl) {
+        progEl.style.width = `${(totalAnswered / questions.length) * 100}%`;
+      }
+    }
+
+    function generateReportMarkdown() {
+      const totalAnswered = Object.keys(userAnswers).length;
+      let correctCount = 0;
+      let missed = [];
+      let mastered = [];
+
+      questions.forEach(q => {
+        if (userAnswers[q.id] !== undefined) {
+          const chosenIdx = userAnswers[q.id];
+          const isCorrect = q.options[chosenIdx].correct;
+          const chosenText = q.options[chosenIdx].text;
+          const correctOpt = q.options.find(o => o.correct);
+          if (isCorrect) {
+            correctCount++;
+            mastered.push(`- **Q${q.id}: ${q.title}** ✅ (Mastered)`);
+          } else {
+            missed.push(`- **Q${q.id}: ${q.title}** ❌\n  - **My Answer:** "${chosenText}"\n  - **Correct Concept:** "${correctOpt.text}"\n  - **Clinical / Architectural Takeaway:** ${q.feedback.wrong}`);
+          }
+        }
+      });
+
+      const percent = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+      let md = `### 🧠 RSNA Knee Architecture Grok Quiz Report\n\n`;
+      md += `**Overall Score:** ${correctCount} / ${totalAnswered} answered (${percent}%) | Total Bank: ${questions.length} questions\n\n`;
+
+      if (missed.length > 0) {
+        md += `#### 🚨 Concepts Where I Need Help / Missed:\n\n` + missed.join("\n\n") + "\n\n";
+      } else if (totalAnswered > 0) {
+        md += `#### 🎉 Perfect Score!\nAll ${totalAnswered} answered questions were 100% correct!\n\n`;
+      }
+
+      if (mastered.length > 0) {
+        md += `#### ✅ Mastered Topics (${mastered.length}):\n` + mastered.join("\n") + "\n";
+      }
+
+      return md;
+    }
+
+    function copyReport() {
+      const md = generateReportMarkdown();
+      navigator.clipboard.writeText(md).then(() => {
+        const btn = document.getElementById("btn-copy-report");
+        const originalText = btn.innerHTML;
+        btn.innerHTML = "✅ Copied to Clipboard!";
+        btn.style.borderColor = "#10b981";
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.style.borderColor = "";
+        }, 2500);
+      }).catch(err => {
+        console.error("Clipboard error:", err);
+        prompt("Copy your quiz report below:", md);
+      });
+    }
+
+    function downloadJSON() {
+      const totalAnswered = Object.keys(userAnswers).length;
+      let correctCount = 0;
+      const details = [];
+
+      questions.forEach(q => {
+        if (userAnswers[q.id] !== undefined) {
+          const chosenIdx = userAnswers[q.id];
+          const isCorrect = q.options[chosenIdx].correct;
+          if (isCorrect) correctCount++;
+          details.push({
+            id: q.id,
+            title: q.title,
+            answeredIndex: chosenIdx,
+            answeredText: q.options[chosenIdx].text,
+            isCorrect: isCorrect,
+            correctAnswer: q.options.find(o => o.correct).text,
+            feedback: isCorrect ? q.feedback.correct : q.feedback.wrong
+          });
+        }
+      });
+
+      const payload = {
+        timestamp: new Date().toISOString(),
+        totalQuestions: questions.length,
+        answeredCount: totalAnswered,
+        correctCount: correctCount,
+        accuracyPercent: totalAnswered > 0 ? ((correctCount / totalAnswered) * 100).toFixed(1) : "0.0",
+        results: details
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "rsna_knee_quiz_results.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function resetQuiz() {
+      if (confirm("Are you sure you want to reset your quiz answers and start fresh?")) {
+        localStorage.removeItem(STORAGE_KEY);
+        userAnswers = {};
+        renderQuiz();
+      }
     }
 
     renderQuiz();
