@@ -92,28 +92,47 @@ for target_p in [
 
 os.environ["KAGGLE_USERNAME"] = ku
 os.environ["KAGGLE_KEY"] = kk
+if kk.startswith("KGAT_") or len(kk) > 32:
+    os.environ["KAGGLE_API_TOKEN"] = kk
+    token_file = Path.home() / ".kaggle" / "access_token"
+    token_file.write_text(kk)
+    os.chmod(token_file, 0o600)
+
 if os.path.exists(DRIVE_SAVE_DIR):
     drive_kaggle_json.write_text(norm_payload)
-print(f"--> Repaired & verified kaggle.json (username='{ku}', key_len={len(kk)}) and saved to Drive!")
+print(f"--> Repaired & verified kaggle.json (username='{ku}', key_len={len(kk)}, bearer={kk.startswith('KGAT_') or len(kk) > 32}) and saved to Drive!")
 
-from kaggle.api.kaggle_api_extended import KaggleApi
+from kagglesdk import KaggleClient
+from kagglesdk.competitions.types.competition_api_service import ApiDownloadDataFileRequest
 from kagglesdk.kernels.types.kernels_api_service import ApiListKernelSessionOutputRequest
 
-api = KaggleApi()
-api.authenticate()
-print("--> Kaggle API authenticated successfully!")
+def make_kaggle_client():
+    if kk.startswith("KGAT_") or len(kk) > 32:
+        return KaggleClient(api_token=kk)
+    return KaggleClient(username=ku, password=kk)
+
+print("--> Kaggle SDK client initialized with Bearer Token auth!")
 
 # 3. Download train.csv to writable local NVMe (data/raw/train.csv)
 COMP_DIR = Path("data/raw")
 COMP_DIR.mkdir(parents=True, exist_ok=True)
-if not (COMP_DIR / "train.csv").exists():
-    print("Downloading train.csv...")
-    api.competition_download_file("rsna-knee-abnormality-detection", "train.csv", path=str(COMP_DIR), quiet=False)
-    zip_p = COMP_DIR / "train.csv.zip"
-    if zip_p.exists():
+train_csv_path = COMP_DIR / "train.csv"
+if not train_csv_path.exists():
+    print("Downloading train.csv via KaggleClient...")
+    with make_kaggle_client() as client:
+        dl_req = ApiDownloadDataFileRequest()
+        dl_req.competition_name = "rsna-knee-abnormality-detection"
+        dl_req.file_name = "train.csv"
+        dl_resp = client.competitions.competition_api_client.download_data_file(dl_req)
+        raw_bytes = dl_resp.content
+    if raw_bytes[:2] == b"PK":
+        zip_p = COMP_DIR / "train.csv.zip"
+        zip_p.write_bytes(raw_bytes)
         shutil.unpack_archive(str(zip_p), str(COMP_DIR))
         zip_p.unlink()
-print(f"--> train.csv ready at {COMP_DIR / 'train.csv'} ({ (COMP_DIR / 'train.csv').stat().st_size / 1e6:.2f} MB)")
+    else:
+        train_csv_path.write_bytes(raw_bytes)
+print(f"--> train.csv ready at {train_csv_path} ({train_csv_path.stat().st_size / 1e6:.2f} MB)")
 
 # 4. 32-Thread Parallel Download of 384px Slice Cache (4,407 studies, 15.15 GB) to data/processed/cached_slices
 CACHE_ROOT = Path("data/processed")
@@ -127,7 +146,7 @@ else:
     print("Listing signed URLs for nswitzer/creaky-caching-dataset-n4-384...")
     file_items = []
     page_token = None
-    with api.build_kaggle_client() as client:
+    with make_kaggle_client() as client:
         while True:
             req = ApiListKernelSessionOutputRequest()
             req.user_name = "nswitzer"
