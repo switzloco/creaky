@@ -19,7 +19,7 @@ MARKDOWN_HEADER = [
     "3. Run **Cell 2** to train **Fold 0** with the full **73.3M-param `coatnet_rmlp_2_rw_384.sw_in12k_ft_in1k`** (`5 epochs`, `bfloat16` Tensor Cores, Cleanlab zero-weighting, 64-D report supervision).\n",
 ]
 
-SETUP_CELL_CODE = """# === CELL 1: 1-CLICK COLAB A100 ENVIRONMENT & 32-THREAD FAST CACHE DOWNLOADER ===
+SETUP_CELL_CODE = r"""# === CELL 1: 1-CLICK COLAB A100 ENVIRONMENT & 32-THREAD FAST CACHE DOWNLOADER ===
 import os
 import re
 import json
@@ -75,7 +75,8 @@ if not kaggle_json_path.exists():
 # Auto-repair any broken quotes in kaggle.json (e.g. {" "username:nswitzer,key:...})
 raw_text = kaggle_json_path.read_text(errors="ignore")
 m_key = re.search(r"(KGAT_[A-Za-z0-9_]+|[a-fA-F0-9]{32})", raw_text)
-kk = m_key.group(1) if m_key else raw_text.split("key")[-1].strip(" :\"'{}\n\r\t")
+long_tokens = re.findall(r"[A-Za-z0-9_]{20,}", raw_text)
+kk = m_key.group(1) if m_key else (long_tokens[-1] if long_tokens else "")
 ku = "nswitzer"
 norm_payload = json.dumps({"username": ku, "key": kk})
 
