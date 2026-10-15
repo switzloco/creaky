@@ -75,9 +75,7 @@ if not kaggle_json_path.exists():
 # Auto-repair any broken quotes in kaggle.json (e.g. {" "username:nswitzer,key:...})
 raw_text = kaggle_json_path.read_text(errors="ignore")
 m_key = re.search(r"(KGAT_[A-Za-z0-9_]+|[a-fA-F0-9]{32})", raw_text)
-if not m_key:
-    m_key = re.search(r"key[\"'\\s:]+([A-Za-z0-9_\\-]+)", raw_text)
-kk = m_key.group(1) if m_key else ""
+kk = m_key.group(1) if m_key else raw_text.split("key")[-1].strip(" :\"'{}\n\r\t")
 ku = "nswitzer"
 norm_payload = json.dumps({"username": ku, "key": kk})
 
