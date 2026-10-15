@@ -14,8 +14,8 @@ MARKDOWN_HEADER = [
     "1. In Colab menu: **Runtime → Change runtime type → Hardware accelerator: `A100 GPU`** (or `L4 GPU`).\n",
     "2. Run **Cell 1** below:\n",
     "   - It mounts your Google Drive (`/content/drive/MyDrive/creaky_c384`) so checkpoints are auto-saved after every epoch.\n",
-    "   - If `KAGGLE_USERNAME` / `KAGGLE_KEY` aren't in Colab Secrets, it prompts you to select your `C:\\Users\\nswitzer\\.kaggle\\kaggle.json` file.\n",
-    "   - It pulls `train.csv` and all **4,407 pre-cached 384×384 `.npz` volumes** (`15.15 GB`) in ~60–90 seconds using a 32-thread parallel GCS downloader.\n",
+    "   - Checks `/content/drive/MyDrive/creaky_c384/kaggle.json` or Colab Secrets (`KAGGLE_USERNAME` / `KAGGLE_KEY`); if neither exists yet, prompts you once to upload `kaggle.json` and saves a copy to Drive so future runs are 100% hands-free.\n",
+    "   - Pulls `train.csv` and all **4,407 pre-cached 384×384 `.npz` volumes** (`15.15 GB`) in ~60–90 seconds using a 32-thread parallel GCS downloader.\n",
     "3. Run **Cell 2** to train **Fold 0** with the full **73.3M-param `coatnet_rmlp_2_rw_384.sw_in12k_ft_in1k`** (`5 epochs`, `bfloat16` Tensor Cores, Cleanlab zero-weighting, 64-D report supervision).\n",
 ]
 
@@ -47,8 +47,16 @@ try:
 except Exception as e:
     print(f"Note: Google Drive not mounted ({e}). Checkpoints will save to /kaggle/working.")
 
-# 2. Authenticate Kaggle (Colab Secrets -> ~/.kaggle/kaggle.json -> interactive file upload)
+# 2. Authenticate Kaggle (Drive kaggle.json -> Colab Secrets -> interactive file upload)
 kaggle_json_path = Path.home() / ".kaggle" / "kaggle.json"
+drive_kaggle_json = Path(DRIVE_SAVE_DIR) / "kaggle.json"
+
+if not kaggle_json_path.exists() and drive_kaggle_json.exists():
+    kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(drive_kaggle_json, kaggle_json_path)
+    os.chmod(kaggle_json_path, 0o600)
+    print(f"--> Loaded kaggle.json automatically from Google Drive ({drive_kaggle_json})!")
+
 if not kaggle_json_path.exists():
     try:
         from google.colab import userdata
@@ -68,11 +76,14 @@ if not kaggle_json_path.exists() and not (os.environ.get("KAGGLE_USERNAME") and 
     print("Please upload your kaggle.json file (located at C:\\\\Users\\\\nswitzer\\\\.kaggle\\\\kaggle.json):")
     from google.colab import files
     uploaded = files.upload()
-    if "kaggle.json" in uploaded:
+    if uploaded:
+        fname = next(iter(uploaded.keys()))
         kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
-        kaggle_json_path.write_bytes(uploaded["kaggle.json"])
+        kaggle_json_path.write_bytes(uploaded[fname])
         os.chmod(kaggle_json_path, 0o600)
-        print("--> Saved kaggle.json!")
+        if os.path.exists(DRIVE_SAVE_DIR):
+            drive_kaggle_json.write_bytes(uploaded[fname])
+            print(f"--> Saved kaggle.json and backed up to {drive_kaggle_json} for future runs!")
 
 from kaggle.api.kaggle_api_extended import KaggleApi
 from kagglesdk.kernels.types.kernels_api_service import ApiListKernelSessionOutputRequest
@@ -152,18 +163,17 @@ def main():
     with open(TPU_NB, "r", encoding="utf-8") as f:
         nb = json.load(f)
 
-    # Extract main training code cell
     train_cell_idx = len(nb["cells"]) - 1
     src = "".join(nb["cells"][train_cell_idx]["source"])
 
     # Configure for A100: coatnet_rmlp_2_rw_384, Fold 0, 5 epochs, batch_size=2, accum_steps=2, smoke_steps=None
     src = src.replace('"epochs": 4,', '"epochs": 5,')
     src = src.replace('"epochs": 3,', '"epochs": 5,')
+    src = src.replace('"fold": 2,', '"fold": 0,')
     src = src.replace('"batch_size": 1,', '"batch_size": 2,')
     src = src.replace('"accum_steps": 4,', '"accum_steps": 2,')
     src = src.replace('"smoke_steps": 20,', '"smoke_steps": None,')
 
-    # Upgrade CUDA autocast to use native bfloat16 on A100/L4 when supported (no GradScaler overflow risk)
     old_cuda_amp = """    if device.type == "cuda":
         scaler = torch.cuda.amp.GradScaler()
         autocast_ctx = torch.cuda.amp.autocast"""
@@ -180,7 +190,6 @@ def main():
     if old_cuda_amp in src:
         src = src.replace(old_cuda_amp, new_cuda_amp)
 
-    # Auto-copy best checkpoint and val_preds to Google Drive on every improvement
     old_save_log = '            print(f"  >>> Saved validation predictions to: {val_preds_path}")'
     new_save_log = """            print(f"  >>> Saved validation predictions to: {val_preds_path}")
             if os.path.exists("/content/drive/MyDrive/creaky_c384"):
