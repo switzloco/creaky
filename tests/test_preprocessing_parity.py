@@ -58,7 +58,7 @@ def load_functions(path: str, names: List[str]) -> Dict[str, object]:
     ns = {
         "np": np, "cv2": cv2, "pydicom": pydicom, "os": os, "pd": pd, "torch": FAKE_TORCH,
         "List": List, "Dict": Dict, "Tuple": Tuple, "Optional": Optional, "Union": Union,
-        "PIPELINES": ("cache_v1", "raw_v1"),
+        "PIPELINES": ("cache_v1", "cache_v1_384", "raw_v1"),
         "IMAGENET_MEAN": IMAGENET_MEAN, "IMAGENET_STD": IMAGENET_STD,
     }
     exec(compile(ast.Module(body=nodes, type_ignores=[]), path, "exec"), ns)
@@ -121,7 +121,7 @@ class TestPreprocessingParity(unittest.TestCase):
         cls.sub = load_functions(SUBMISSION, common + [
             "read_slice", "sort_by_instance_number", "sample_plane_like_cache", "cached_plane_to_slabs",
             "apply_windowing_raw", "crop_empty_borders_raw", "compute_slice_position", "load_series_raw_v1",
-            "select_series_uid", "load_plane"])
+            "select_series_uid", "load_plane", "checkpoint_pipeline"])
 
     # ---- cache_v1 ---------------------------------------------------------------------------
 
@@ -144,6 +144,26 @@ class TestPreprocessingParity(unittest.TestCase):
             self.assertEqual(train_slabs.shape, (16, 3, 256, 256))
             np.testing.assert_array_equal(train_slabs, self.sub["load_plane"](files, "cache_v1"),
                                           err_msg="cache_v1: submission slabs != training slabs")
+
+    def test_cache_v1_384_pipeline_and_routing(self):
+        with tempfile.TemporaryDirectory() as d:
+            write_series(d, 20, seed=42)
+            files = [os.path.join(d, f) for f in os.listdir(d)]
+            cached_384 = self.kernel["process_plane"](d, 16, (384, 384))
+            train_slabs_384 = self.train["cached_plane_to_slabs"](cached_384)
+            infer_slabs_384 = self.sub["load_plane"](files, "cache_v1_384")
+            self.assertEqual(infer_slabs_384.shape, (16, 3, 384, 384))
+            np.testing.assert_array_equal(train_slabs_384, infer_slabs_384)
+
+            cp = self.sub["checkpoint_pipeline"]
+            self.assertEqual(
+                cp({"preprocessing": "cache_v1", "config": {"target_size": (384, 384)}}, "coatnet_rmlp_1_rw2_224.sw_in12k_ft_in1k"),
+                "cache_v1_384",
+            )
+            self.assertEqual(
+                cp({"preprocessing": "raw_v1", "config": {"target_size": (256, 256)}}, "convnext_small"),
+                "raw_v1",
+            )
 
     def test_cache_long_series_uses_central_band(self):
         self._check_cache_pipeline(30)
