@@ -99,6 +99,8 @@ def harden_source(src: str, mode: str) -> str:
     elif mode == "tpu_f0":
         src = src.replace('"batch_size": 2,', '"batch_size": 1,')
         src = src.replace('"accum_steps": 2,', '"accum_steps": 4,')
+        src = src.replace('"fold": 0,', '"fold": 2,')
+        src = src.replace('"smoke_steps": 20,', '"smoke_steps": None,')
 
     compile(src, f"<{mode}>", "exec")
     return src
@@ -164,6 +166,4 @@ def create_colab_notebook():
 
 
 if __name__ == "__main__":
-    update_notebook(GPU_NB, "gpu_f1")
     update_notebook(TPU_NB, "tpu_f0")
-    create_colab_notebook()
