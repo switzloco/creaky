@@ -35,8 +35,8 @@ import torch
 from tqdm.auto import tqdm
 
 # Bypass Colab's read-only /kaggle/input FUSE mount so Cell 2 uses writable local NVMe (data/raw & data/processed/cached_slices)
-_orig_path_exists = os.path.exists
-os.path.exists = lambda p: False if str(p).replace("\\", "/").startswith("/kaggle") else _orig_path_exists(p)
+import genericpath
+os.path.exists = lambda p: False if str(p).replace("\\", "/").startswith("/kaggle") else genericpath.exists(p)
 
 print(f"PyTorch: {torch.__version__} | CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
@@ -98,7 +98,7 @@ if kk.startswith("KGAT_") or len(kk) > 32:
     token_file.write_text(kk)
     os.chmod(token_file, 0o600)
 
-if os.path.exists(DRIVE_SAVE_DIR):
+if genericpath.exists(DRIVE_SAVE_DIR):
     drive_kaggle_json.write_text(norm_payload)
 print(f"--> Repaired & verified kaggle.json (username='{ku}', key_len={len(kk)}, bearer={kk.startswith('KGAT_') or len(kk) > 32}) and saved to Drive!")
 
