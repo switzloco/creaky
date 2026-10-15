@@ -15,7 +15,7 @@ MARKDOWN_HEADER = [
     "2. Run **Cell 1** below:\n",
     "   - Mounts your Google Drive (`/content/drive/MyDrive/creaky_c384`) so checkpoints are auto-saved after every epoch.\n",
     "   - Automatically repairs malformed `kaggle.json` files and backs up the clean JSON to Google Drive so future runs are 100% hands-free.\n",
-    "   - Pulls `train.csv` and all **4,407 pre-cached 384×384 `.npz` volumes** (`15.15 GB`) in ~60–90 seconds using a 32-thread parallel GCS downloader.\n",
+    "   - Pulls `train.csv` and all **4,407 pre-cached 384×384 `.npz` volumes** (`15.15 GB`) onto writable local NVMe (`data/processed/cached_slices`) in ~60–90 seconds using a 32-thread parallel GCS downloader.\n",
     "3. Run **Cell 2** to train **Fold 0** with the full **73.3M-param `coatnet_rmlp_2_rw_384.sw_in12k_ft_in1k`** (`5 epochs`, `bfloat16` Tensor Cores, Cleanlab zero-weighting, 64-D report supervision).\n",
 ]
 
@@ -34,6 +34,10 @@ import requests
 import torch
 from tqdm.auto import tqdm
 
+# Bypass Colab's read-only /kaggle/input FUSE mount so Cell 2 uses writable local NVMe (data/raw & data/processed/cached_slices)
+_orig_path_exists = os.path.exists
+os.path.exists = lambda p: False if str(p).replace("\\", "/").startswith("/kaggle") else _orig_path_exists(p)
+
 print(f"PyTorch: {torch.__version__} | CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"GPU Device: {torch.cuda.get_device_name(0)} | VRAM: {torch.cuda.get_device_properties(0).total_memory / (1024**3):.1f} GB | BF16: {torch.cuda.is_bf16_supported()}")
@@ -46,7 +50,7 @@ try:
     os.makedirs(DRIVE_SAVE_DIR, exist_ok=True)
     print(f"--> Google Drive mounted! Checkpoints will auto-save to: {DRIVE_SAVE_DIR}")
 except Exception as e:
-    print(f"Note: Google Drive not mounted ({e}). Checkpoints will save to /kaggle/working.")
+    print(f"Note: Google Drive not mounted ({e}). Checkpoints will save to checkpoints/.")
 
 # 2. Authenticate Kaggle (auto-repairs malformed kaggle.json quotes/syntax)
 kaggle_json_path = Path.home() / ".kaggle" / "kaggle.json"
@@ -57,11 +61,9 @@ if not kaggle_json_path.exists():
     if drive_kaggle_json.exists():
         kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(drive_kaggle_json, kaggle_json_path)
-        print(f"--> Loaded kaggle.json from Google Drive ({drive_kaggle_json})!")
     elif content_kaggle_json.exists():
         kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(content_kaggle_json, kaggle_json_path)
-        print("--> Found existing /content/kaggle.json!")
 
 if not kaggle_json_path.exists():
     print("Please upload your kaggle.json file:")
@@ -72,7 +74,7 @@ if not kaggle_json_path.exists():
         kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
         kaggle_json_path.write_bytes(uploaded[fname])
 
-# Auto-repair any broken quotes in kaggle.json (e.g. {" "username:nswitzer,key:...})
+# Auto-repair broken quotes in kaggle.json (e.g. {" "username:nswitzer,key:...})
 raw_text = kaggle_json_path.read_text(errors="ignore")
 m_key = re.search(r"(KGAT_[A-Za-z0-9_]+|[a-fA-F0-9]{32})", raw_text)
 long_tokens = re.findall(r"[A-Za-z0-9_]{20,}", raw_text)
@@ -101,8 +103,8 @@ api = KaggleApi()
 api.authenticate()
 print("--> Kaggle API authenticated successfully!")
 
-# 3. Download train.csv
-COMP_DIR = Path("/kaggle/input/rsna-knee-abnormality-detection")
+# 3. Download train.csv to writable local NVMe (data/raw/train.csv)
+COMP_DIR = Path("data/raw")
 COMP_DIR.mkdir(parents=True, exist_ok=True)
 if not (COMP_DIR / "train.csv").exists():
     print("Downloading train.csv...")
@@ -111,10 +113,10 @@ if not (COMP_DIR / "train.csv").exists():
     if zip_p.exists():
         shutil.unpack_archive(str(zip_p), str(COMP_DIR))
         zip_p.unlink()
-print(f"--> train.csv ready ({ (COMP_DIR / 'train.csv').stat().st_size / 1e6:.2f} MB)")
+print(f"--> train.csv ready at {COMP_DIR / 'train.csv'} ({ (COMP_DIR / 'train.csv').stat().st_size / 1e6:.2f} MB)")
 
-# 4. 32-Thread Parallel Download of 384px Slice Cache (4,407 studies, 15.15 GB)
-CACHE_ROOT = Path("/kaggle/input/creaky-caching-dataset-n4-384")
+# 4. 32-Thread Parallel Download of 384px Slice Cache (4,407 studies, 15.15 GB) to data/processed/cached_slices
+CACHE_ROOT = Path("data/processed")
 CACHE_SLICE_DIR = CACHE_ROOT / "cached_slices"
 CACHE_SLICE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -148,10 +150,9 @@ else:
 
     def _dl_one(item):
         rel_name, url = item
-        dest = CACHE_ROOT / rel_name
+        dest = CACHE_SLICE_DIR / Path(rel_name).name
         if dest.exists() and dest.stat().st_size > 0:
             return True
-        dest.parent.mkdir(parents=True, exist_ok=True)
         r = session.get(url, timeout=60)
         r.raise_for_status()
         dest.write_bytes(r.content)
@@ -163,7 +164,7 @@ else:
             pass
 
     final_count = len(list(CACHE_SLICE_DIR.glob("*.npz")))
-    print(f"--> Cache download complete! {final_count} / {len(file_items)} .npz volumes on local NVMe.")
+    print(f"--> Cache download complete! {final_count} / {len(file_items)} .npz volumes on local NVMe ({CACHE_SLICE_DIR}).")
 """
 
 
@@ -182,6 +183,7 @@ def main():
     src = src.replace('"batch_size": 1,', '"batch_size": 2,')
     src = src.replace('"accum_steps": 4,', '"accum_steps": 2,')
     src = src.replace('"smoke_steps": 20,', '"smoke_steps": None,')
+    src = src.replace('elif os.path.exists("data/processed/cached_slices"):', 'if not self.cached_dir and os.path.exists("data/processed/cached_slices"):')
 
     old_cuda_amp = """    if device.type == "cuda":
         scaler = torch.cuda.amp.GradScaler()
