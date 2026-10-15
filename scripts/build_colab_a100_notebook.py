@@ -14,13 +14,14 @@ MARKDOWN_HEADER = [
     "1. In Colab menu: **Runtime → Change runtime type → Hardware accelerator: `A100 GPU`** (or `L4 GPU`).\n",
     "2. Run **Cell 1** below:\n",
     "   - Mounts your Google Drive (`/content/drive/MyDrive/creaky_c384`) so checkpoints are auto-saved after every epoch.\n",
-    "   - Automatically handles both legacy `kaggle.json` (`username` + `key`) and new Kaggle v2 API tokens (`token` / `KAGGLE_API_TOKEN`), and backs up `kaggle.json` to Google Drive so future runs are 100% hands-free.\n",
+    "   - Automatically repairs malformed `kaggle.json` files and backs up the clean JSON to Google Drive so future runs are 100% hands-free.\n",
     "   - Pulls `train.csv` and all **4,407 pre-cached 384×384 `.npz` volumes** (`15.15 GB`) in ~60–90 seconds using a 32-thread parallel GCS downloader.\n",
     "3. Run **Cell 2** to train **Fold 0** with the full **73.3M-param `coatnet_rmlp_2_rw_384.sw_in12k_ft_in1k`** (`5 epochs`, `bfloat16` Tensor Cores, Cleanlab zero-weighting, 64-D report supervision).\n",
 ]
 
 SETUP_CELL_CODE = """# === CELL 1: 1-CLICK COLAB A100 ENVIRONMENT & 32-THREAD FAST CACHE DOWNLOADER ===
 import os
+import re
 import json
 import shutil
 import subprocess
@@ -47,7 +48,7 @@ try:
 except Exception as e:
     print(f"Note: Google Drive not mounted ({e}). Checkpoints will save to /kaggle/working.")
 
-# 2. Authenticate Kaggle (handles both legacy username/key and v2 token formats)
+# 2. Authenticate Kaggle (auto-repairs malformed kaggle.json quotes/syntax)
 kaggle_json_path = Path.home() / ".kaggle" / "kaggle.json"
 drive_kaggle_json = Path(DRIVE_SAVE_DIR) / "kaggle.json"
 content_kaggle_json = Path("/content/kaggle.json")
@@ -63,19 +64,7 @@ if not kaggle_json_path.exists():
         print("--> Found existing /content/kaggle.json!")
 
 if not kaggle_json_path.exists():
-    try:
-        from google.colab import userdata
-        ku = userdata.get("KAGGLE_USERNAME") or "nswitzer"
-        kk = userdata.get("KAGGLE_KEY") or userdata.get("KAGGLE_API_TOKEN")
-        if kk:
-            kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
-            kaggle_json_path.write_text(json.dumps({"username": ku, "key": kk}))
-            print("--> Loaded Kaggle credentials from Colab Secrets.")
-    except Exception:
-        pass
-
-if not kaggle_json_path.exists():
-    print("Please upload your kaggle.json file (located at C:\\\\Users\\\\nswitzer\\\\.kaggle\\\\kaggle.json):")
+    print("Please upload your kaggle.json file:")
     from google.colab import files
     uploaded = files.upload()
     if uploaded:
@@ -83,38 +72,28 @@ if not kaggle_json_path.exists():
         kaggle_json_path.parent.mkdir(parents=True, exist_ok=True)
         kaggle_json_path.write_bytes(uploaded[fname])
 
-# Normalize kaggle.json so both legacy (username + key) and v2 (token / access_token) work
-if kaggle_json_path.exists():
-    raw_text = kaggle_json_path.read_text().strip()
-    try:
-        raw_cfg = json.loads(raw_text)
-    except Exception:
-        raw_cfg = {"key": raw_text}
-    ku = raw_cfg.get("username") or raw_cfg.get("user") or "nswitzer"
-    kk = (
-        raw_cfg.get("key")
-        or raw_cfg.get("token")
-        or raw_cfg.get("access_token")
-        or next((str(v) for k, v in raw_cfg.items() if k not in ("username", "user")), "")
-    )
-    norm_payload = json.dumps({"username": ku, "key": kk})
-    for target_p in [
-        kaggle_json_path,
-        Path.home() / ".config" / "kaggle" / "kaggle.json",
-    ]:
-        target_p.parent.mkdir(parents=True, exist_ok=True)
-        target_p.write_text(norm_payload)
-        os.chmod(target_p, 0o600)
-    if kk.startswith("KGAT_"):
-        acc_p = kaggle_json_path.parent / "access_token"
-        acc_p.write_text(kk)
-        os.chmod(acc_p, 0o600)
-        os.environ["KAGGLE_API_TOKEN"] = kk
-    os.environ["KAGGLE_USERNAME"] = ku
-    os.environ["KAGGLE_KEY"] = kk
-    if os.path.exists(DRIVE_SAVE_DIR):
-        drive_kaggle_json.write_text(norm_payload)
-        print(f"--> Normalized credentials (username='{ku}') and backed up to {drive_kaggle_json}!")
+# Auto-repair any broken quotes in kaggle.json (e.g. {" "username:nswitzer,key:...})
+raw_text = kaggle_json_path.read_text(errors="ignore")
+m_key = re.search(r"(KGAT_[A-Za-z0-9_]+|[a-fA-F0-9]{32})", raw_text)
+if not m_key:
+    m_key = re.search(r"key[\"'\\s:]+([A-Za-z0-9_\\-]+)", raw_text)
+kk = m_key.group(1) if m_key else ""
+ku = "nswitzer"
+norm_payload = json.dumps({"username": ku, "key": kk})
+
+for target_p in [
+    kaggle_json_path,
+    Path.home() / ".config" / "kaggle" / "kaggle.json",
+]:
+    target_p.parent.mkdir(parents=True, exist_ok=True)
+    target_p.write_text(norm_payload)
+    os.chmod(target_p, 0o600)
+
+os.environ["KAGGLE_USERNAME"] = ku
+os.environ["KAGGLE_KEY"] = kk
+if os.path.exists(DRIVE_SAVE_DIR):
+    drive_kaggle_json.write_text(norm_payload)
+print(f"--> Repaired & verified kaggle.json (username='{ku}', key_len={len(kk)}) and saved to Drive!")
 
 from kaggle.api.kaggle_api_extended import KaggleApi
 from kagglesdk.kernels.types.kernels_api_service import ApiListKernelSessionOutputRequest
