@@ -193,7 +193,15 @@ def main():
         nb = json.load(f)
 
     train_cell_idx = len(nb["cells"]) - 1
-    src = "".join(nb["cells"][train_cell_idx]["source"])
+    tpu_src = "".join(nb["cells"][train_cell_idx]["source"])
+    tpu_src = tpu_src.replace("probs = torch.sigmoid(logits).cpu().numpy()", "probs = torch.sigmoid(logits.float()).cpu().numpy()")
+    tpu_src = tpu_src.replace('val_targets.append(batch["targets"].cpu().numpy())', 'val_targets.append(batch["targets"].float().cpu().numpy())')
+    tpu_src = tpu_src.replace('"preprocessing": "cache_v1" if train_ds.cached_dir else "raw_v1",', '"preprocessing": "cache_v1_384" if train_ds.cached_dir else "raw_v1",')
+    nb["cells"][train_cell_idx]["source"] = [l for l in tpu_src.splitlines(keepends=True)]
+    with open(TPU_NB, "w", encoding="utf-8") as f:
+        json.dump(nb, f, indent=1, ensure_ascii=False)
+
+    src = tpu_src
 
     # Configure for A100: coatnet_rmlp_2_rw_384, Fold 0, 5 epochs, batch_size=2, accum_steps=2, smoke_steps=None
     src = src.replace('"epochs": 4,', '"epochs": 5,')
