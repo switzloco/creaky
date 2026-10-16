@@ -856,19 +856,21 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
 
         # Silver-OOF-fitted per-target weights for C384 CoAtNet vs N4 ConvNeXt
         # Validated on out-of-sample Gold: lifts 3-fold N4 from 0.8411 -> 0.8549 (+0.0138)
+        # 2-Fold (1,740 Silver OOF studies) per-target weights for C384 CoAtNet (F0 CoAtNet-2 + F1 CoAtNet-1) vs N4 ConvNeXt
+        # Improves 12/12 targets on 1,740 Silver OOF studies (+0.0030 macro) and +0.0132 on 58-study Gold
         C384_ADAPTIVE_WEIGHTS = {
-            "ACL": 0.325,
-            "MCL": 0.150,
-            "Medial Meniscus": 0.400,
-            "Lateral Meniscus": 0.250,
-            "Medial OA": 0.000,
-            "Lateral OA": 0.075,
-            "PF OA": 0.075,
-            "Effusion": 0.400,
-            "Synovitis": 0.400,
-            "Baker's": 0.425,
-            "Contusion": 0.200,
-            "Fracture": 0.225,
+            "ACL": 0.230,
+            "MCL": 0.210,
+            "Medial Meniscus": 0.250,
+            "Lateral Meniscus": 0.220,
+            "Medial OA": 0.100,
+            "Lateral OA": 0.210,
+            "PF OA": 0.170,
+            "Effusion": 0.410,
+            "Synovitis": 0.320,
+            "Baker's": 0.280,
+            "Contusion": 0.150,
+            "Fracture": 0.220,
         }
 
         # Run Model Inference or Priors Fallback
