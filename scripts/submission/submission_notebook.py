@@ -860,17 +860,17 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
         # Improves 12/12 targets on 1,740 Silver OOF studies (+0.0030 macro) and +0.0132 on 58-study Gold
         C384_ADAPTIVE_WEIGHTS = {
             "ACL": 0.230,
-            "MCL": 0.210,
-            "Medial Meniscus": 0.250,
-            "Lateral Meniscus": 0.220,
+            "MCL": 0.290,
+            "Medial Meniscus": 0.290,
+            "Lateral Meniscus": 0.180,
             "Medial OA": 0.100,
-            "Lateral OA": 0.210,
-            "PF OA": 0.170,
-            "Effusion": 0.410,
+            "Lateral OA": 0.170,
+            "PF OA": 0.230,
+            "Effusion": 0.480,
             "Synovitis": 0.320,
-            "Baker's": 0.280,
-            "Contusion": 0.150,
-            "Fracture": 0.220,
+            "Baker's": 0.340,
+            "Contusion": 0.220,
+            "Fracture": 0.240,
         }
 
         # Run Model Inference or Priors Fallback
