@@ -289,6 +289,60 @@ def main():
         json.dump(colab_nb, f, indent=1, ensure_ascii=False)
     print(f"Successfully built turnkey Colab A100 notebook at {COLAB_NB}!")
 
+    # Also build Fold 2 notebook optimized for 80GB A100 (batch_size=4, accum_steps=1) + auto-upload to Kaggle Dataset
+    src_f2 = src.replace('"fold": 0,', '"fold": 2,').replace('"batch_size": 2,', '"batch_size": 4,').replace('"accum_steps": 2,', '"accum_steps": 1,')
+    auto_sync_f2_code = """# === CELL 3: AUTO-UPLOAD FOLD 2 TO KAGGLE DATASET nswitzer/creaky-c384-cleanlab-models ===
+import json, os, shutil, subprocess
+from pathlib import Path
+
+sync_dir = Path("colab_ds_sync_f2")
+if sync_dir.exists():
+    shutil.rmtree(sync_dir)
+sync_dir.mkdir(parents=True, exist_ok=True)
+
+print("1. Pulling existing Fold 0 + Fold 1 from nswitzer/creaky-c384-cleanlab-models...")
+subprocess.run(["kaggle", "datasets", "download", "-d", "nswitzer/creaky-c384-cleanlab-models", "-p", str(sync_dir), "--unzip"], check=True)
+for z in sync_dir.glob("*.zip"):
+    z.unlink()
+
+print("2. Adding newly trained Fold 2...")
+shutil.copy2("checkpoints/best_model_fold_2.pt", sync_dir / "best_model_fold_2.pt")
+shutil.copy2("checkpoints/val_preds_fold_2.csv", sync_dir / "val_preds_fold_2.csv")
+
+meta = {
+    "title": "Creaky C384 Cleanlab Models",
+    "id": "nswitzer/creaky-c384-cleanlab-models",
+    "licenses": [{"name": "CC0-1.0"}],
+}
+(sync_dir / "dataset-metadata.json").write_text(json.dumps(meta, indent=2))
+print("Staged files:", [(p.name, f"{p.stat().st_size / 1e6:.1f} MB") for p in sorted(sync_dir.iterdir())])
+
+print("3. Pushing complete 3-Fold C384 Dataset (Fold 0 + Fold 1 + Fold 2) to Kaggle...")
+res = subprocess.run(
+    ["kaggle", "datasets", "version", "-p", str(sync_dir), "-m", "Add C384 Fold 2 (complete 3-fold 384px CoAtNet ensemble)"],
+    capture_output=True, text=True,
+)
+print(res.stdout)
+if res.returncode != 0:
+    print(res.stderr)
+    raise RuntimeError("Dataset version push failed")
+print("--> SUCCESS! All 3 folds (Fold 0, Fold 1, Fold 2) are now live on Kaggle!")
+"""
+    colab_nb_f2 = json.loads(json.dumps(colab_nb))
+    colab_nb_f2["cells"][0]["source"] = [s.replace("Fold 0", "Fold 2") for s in MARKDOWN_HEADER]
+    colab_nb_f2["cells"][2]["source"] = [l for l in src_f2.splitlines(keepends=True)]
+    colab_nb_f2["cells"].append({
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": [l for l in auto_sync_f2_code.splitlines(keepends=True)],
+    })
+    f2_path = os.path.join(COLAB_DIR, "colab-c384-a100-fold2.ipynb")
+    with open(f2_path, "w", encoding="utf-8") as f:
+        json.dump(colab_nb_f2, f, indent=1, ensure_ascii=False)
+    print(f"Successfully built turnkey Colab A100 Fold 2 notebook at {f2_path}!")
+
 
 if __name__ == "__main__":
     main()
