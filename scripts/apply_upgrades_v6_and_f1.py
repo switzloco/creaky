@@ -162,9 +162,9 @@ def patch_submission_code(src: str, new_inf_block: str) -> str:
         "pipelines_in_use = sorted({m[1] for m in models}) or [\"cache_v1\"]",
     )
 
-    # 3. Replace from `# Silver-OOF-fitted` (or `C384_ADAPTIVE_WEIGHTS = {`) down to `avg_probs = np.mean(all_probs, axis=0)`
+    # 3. Replace from `# 3-Fold` or `# Silver-OOF-fitted` (or `C384_ADAPTIVE_WEIGHTS = {`) down to `avg_probs = np.mean(..., axis=0)`
     pattern = re.compile(
-        r"        (?:# Silver-OOF-fitted[\s\S]*?)?C384_ADAPTIVE_WEIGHTS = \{[\s\S]*?avg_probs = np\.mean\(all_probs, axis=0\)"
+        r"        (?:# (?:3-Fold|Silver-OOF-fitted)[\s\S]*?)?C384_ADAPTIVE_WEIGHTS = \{[\s\S]*?avg_probs = np\.mean\((?:all_probs|other_family), axis=0\)"
     )
     new_src, count = pattern.subn(new_inf_block, src, count=1)
     assert count == 1, f"Expected 1 replacement of inference block, got {count}"
@@ -172,8 +172,6 @@ def patch_submission_code(src: str, new_inf_block: str) -> str:
 
 
 def main():
-    upgrade_fold1_notebooks()
-
     with open(CAL_JSON, "r", encoding="utf-8") as f:
         cal_data = json.load(f)
 

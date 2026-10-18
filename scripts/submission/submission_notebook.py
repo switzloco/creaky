@@ -862,17 +862,17 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
         # Lifts 2,610-study Silver OOF to 0.8665 and 58-study Out-of-Sample Gold Benchmark to 0.8561 (+0.0156 over N4)
         C384_ADAPTIVE_WEIGHTS = {
             "ACL": 0.230,
-            "MCL": 0.190,
-            "Medial Meniscus": 0.330,
-            "Lateral Meniscus": 0.220,
-            "Medial OA": 0.130,
-            "Lateral OA": 0.120,
+            "MCL": 0.270,
+            "Medial Meniscus": 0.290,
+            "Lateral Meniscus": 0.290,
+            "Medial OA": 0.220,
+            "Lateral OA": 0.180,
             "PF OA": 0.220,
             "Effusion": 0.500,
-            "Synovitis": 0.300,
-            "Baker's": 0.360,
-            "Contusion": 0.210,
-            "Fracture": 0.250,
+            "Synovitis": 0.350,
+            "Baker's": 0.380,
+            "Contusion": 0.270,
+            "Fracture": 0.310,
         }
         OOF_ZLOGIT_STATS = {
                     "n4": {
@@ -1080,52 +1080,52 @@ def run_submission_inference(output_path: str = "submission.csv") -> pd.DataFram
                                 },
                                 "1": {
                                             "ACL": [
-                                                        -1.66966,
-                                                        1.17298
+                                                        -1.26711,
+                                                        1.21898
                                             ],
                                             "MCL": [
-                                                        -2.1496,
-                                                        0.70417
+                                                        -1.52635,
+                                                        0.87659
                                             ],
                                             "Medial Meniscus": [
-                                                        0.14766,
-                                                        1.71911
+                                                        0.54775,
+                                                        1.4837
                                             ],
                                             "Lateral Meniscus": [
-                                                        -1.49704,
-                                                        1.1768
+                                                        -0.98085,
+                                                        1.07125
                                             ],
                                             "Medial OA": [
-                                                        -1.33213,
-                                                        1.43336
+                                                        -0.92322,
+                                                        1.25914
                                             ],
                                             "Lateral OA": [
-                                                        -1.68972,
-                                                        0.90473
+                                                        -1.70659,
+                                                        0.83059
                                             ],
                                             "PF OA": [
-                                                        -1.07911,
-                                                        1.11922
+                                                        -0.85812,
+                                                        1.02504
                                             ],
                                             "Effusion": [
-                                                        0.56663,
-                                                        1.85174
+                                                        0.58761,
+                                                        1.56557
                                             ],
                                             "Synovitis": [
-                                                        -1.15586,
-                                                        1.00001
+                                                        -0.93816,
+                                                        1.04135
                                             ],
                                             "Baker's": [
-                                                        -2.12409,
-                                                        1.57904
+                                                        -1.00625,
+                                                        1.55821
                                             ],
                                             "Contusion": [
-                                                        -1.00441,
-                                                        1.27137
+                                                        -0.2907,
+                                                        1.55658
                                             ],
                                             "Fracture": [
-                                                        -2.2066,
-                                                        0.78159
+                                                        -1.66078,
+                                                        1.09701
                                             ]
                                 },
                                 "2": {
