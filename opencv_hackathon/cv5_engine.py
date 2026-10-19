@@ -295,6 +295,10 @@ def agentic_focal_zoom_and_contours(
     crop_patch = zoom_base[zy0:zy1, zx0:zx1]
     focal_zoom_rgb = cv2.resize(crop_patch, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
+    # Clean Unmarked 1.65x Lanczos4 + CLAHE Zoom (for doctor fiber inspection without overlays)
+    clean_crop = mm["clahe_rgb"][zy0:zy1, zx0:zx1]
+    clean_zoom_rgb = cv2.resize(clean_crop, (w, h), interpolation=cv2.INTER_LANCZOS4)
+
     # Compute quantitative OpenCV 5 Biomarkers inside ROI vs background
     roi_mask = np.zeros((h, w), dtype=np.uint8)
     cv2.drawContours(roi_mask, [primary_cnt], -1, 255, thickness=-1)
@@ -320,6 +324,7 @@ def agentic_focal_zoom_and_contours(
         "scharr_b64": encode_rgb_to_b64(mm["scharr_overlay"]),
         "contour_b64": encode_rgb_to_b64(base_annot),
         "focal_zoom_b64": encode_rgb_to_b64(focal_zoom_rgb),
+        "clean_zoom_b64": encode_rgb_to_b64(clean_zoom_rgb),
         "hipaa_guardrail": phi_audit,
         "biomarkers": {
             "hotspot_centroid": [int(cx), int(cy)],
@@ -336,6 +341,7 @@ def agentic_focal_zoom_and_contours(
             "phi_scrub_latency_ms": phi_audit["phi_scrub_latency_ms"],
         },
     }
+
 
 
 def ensure_onnx_probe_model(onnx_path: Path) -> bool:
