@@ -181,10 +181,36 @@ def build_v15() -> None:
     assert old_moe_fwd in raw, "Could not find old_moe_fwd in notebook"
     raw = raw.replace(old_moe_fwd, new_moe_fwd, 1)
 
-    # 3. Stage 2: Start 4-process multiprocessing Pool BEFORE loading checkpoints,
+    # 3. Stage 2: Define _s2_worker_init and _s2_worker_fn at MODULE TOP-LEVEL (so multiprocessing.Pool can pickle them!),
+    #    start 4-process multiprocessing Pool BEFORE loading checkpoints,
     #    load 6 checkpoints in parallel with 50/50 Dual-GPU FLOP sharding
     #    (cuda:0 = C384 Fold 0 + Fold 1; cuda:1 = C384 Fold 2 + N4 Fold 0, 1, 2),
     #    and return compact (3, 16, 384, 384) uint8 slices for GPU-native slab building.
+    old_s2_def = '    "def run_submission_inference(output_path: str = \\"submission.csv\\") -> pd.DataFrame:\\n",'
+    new_s2_def = (
+        '    "import multiprocessing as _s2_mp\\n",\n'
+        '    "_S2_SERIES_BY_STUDY = {}\\n",\n'
+        '    "_S2_PLANE_COL = None\\n",\n'
+        '    "_S2_TSDIR = None\\n",\n'
+        '    "def _s2_worker_init():\\n",\n'
+        '    "    global _IO_POOL\\n",\n'
+        '    "    _IO_POOL = _PartCThreadPool(max_workers=12)\\n",\n'
+        '    "def _s2_worker_fn(args):\\n",\n'
+        '    "    idx, study_uid = args\\n",\n'
+        '    "    study_series = _S2_SERIES_BY_STUDY.get(study_uid, pd.DataFrame())\\n",\n'
+        '    "    u8_planes = {}\\n",\n'
+        '    "    for plane in (\\"Sagittal\\", \\"Coronal\\", \\"Axial\\"):\\n",\n'
+        '    "        series_files = find_series_files(study_uid, study_series, _S2_PLANE_COL, plane, \\"cache_v1_384\\", _S2_TSDIR)\\n",\n'
+        '    "        u8_planes[plane] = sample_plane_like_cache(series_files, num_slices=16, target_size=(384, 384))\\n",\n'
+        '    "    if len(_HDR_CACHE) > 15000:\\n",\n'
+        '    "        _HDR_CACHE.clear()\\n",\n'
+        '    "    return idx, study_uid, u8_planes\\n",\n'
+        '    "\\n",\n'
+        '    "def run_submission_inference(output_path: str = \\"submission.csv\\") -> pd.DataFrame:\\n",'
+    )
+    assert old_s2_def in raw, "Could not find old_s2_def in notebook"
+    raw = raw.replace(old_s2_def, new_s2_def, 1)
+
     old_s2_load_and_prefetch = (
         '    "    # Check for model checkpoints\\n",\n'
         '    "    models = []\\n",\n'
@@ -284,26 +310,10 @@ def build_v15() -> None:
         '    "    )\\n",\n'
         '    "    study_uids_list = [str(r[\\"StudyInstanceUID\\"]) for _, r in test_df.iterrows()]\\n",\n'
         '    "\\n",\n'
-        '    "    import multiprocessing as _s2_mp\\n",\n'
-        '    "    global _S2_SERIES_BY_STUDY, _S2_PLANE_COL, _S2_TSDIR, _S2_WORKER_TPOOL\\n",\n'
+        '    "    global _S2_SERIES_BY_STUDY, _S2_PLANE_COL, _S2_TSDIR\\n",\n'
         '    "    _S2_SERIES_BY_STUDY = series_by_study\\n",\n'
         '    "    _S2_PLANE_COL = plane_col\\n",\n'
         '    "    _S2_TSDIR = test_series_dir\\n",\n'
-        '    "    _S2_WORKER_TPOOL = None\\n",\n'
-        '    "    def _s2_worker_init():\\n",\n'
-        '    "        global _IO_POOL\\n",\n'
-        '    "        _IO_POOL = _PartCThreadPool(max_workers=12)\\n",\n'
-        '    "    def _s2_worker_fn(args):\\n",\n'
-        '    "        idx, study_uid = args\\n",\n'
-        '    "        study_series = _S2_SERIES_BY_STUDY.get(study_uid, pd.DataFrame())\\n",\n'
-        '    "        u8_planes = {}\\n",\n'
-        '    "        for plane in (\\"Sagittal\\", \\"Coronal\\", \\"Axial\\"):\\n",\n'
-        '    "            series_files = find_series_files(study_uid, study_series, _S2_PLANE_COL, plane, \\"cache_v1_384\\", _S2_TSDIR)\\n",\n'
-        '    "            u8_planes[plane] = sample_plane_like_cache(series_files, num_slices=16, target_size=(384, 384))\\n",\n'
-        '    "        if len(_HDR_CACHE) > 15000:\\n",\n'
-        '    "            _HDR_CACHE.clear()\\n",\n'
-        '    "        return idx, study_uid, u8_planes\\n",\n'
-        '    "\\n",\n'
         '    "    _s2_pool = _s2_mp.get_context(\\"fork\\").Pool(4, initializer=_s2_worker_init)\\n",\n'
         '    "    _s2_iter = _s2_pool.imap(_s2_worker_fn, enumerate(study_uids_list), chunksize=2)\\n",\n'
         '    "\\n",\n'
