@@ -13,7 +13,6 @@
   ],
   "dataset_sources": [
     "nartaa/rsna-knee-publication-swa-weights-20261007",
-    "heliosli/rsna-orthofoundation-fold0-epoch7-20261004",
     "nswitzer/creaky-n4-cleanlab-models",
     "nswitzer/creaky-c384-cleanlab-models"
   ],
