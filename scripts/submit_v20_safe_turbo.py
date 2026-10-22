@@ -15,7 +15,7 @@ def main() -> None:
         competition=comp,
         kernel="nswitzer/creaky-apex-cleanlab-blend",
         kernel_version=22,
-        submission_description=desc,
+        message=desc,
     )
     print("Submitted:", res)
     subs = api.competition_submissions(comp)
