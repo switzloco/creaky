@@ -1,0 +1,13 @@
+# Pinned Dependencies for Creaky-CV5 (OpenCV AI Competition 2026 · Powered by AWS)
+# Compatible with x86_64 (AVX2/AVX-512) and AWS Graviton3/4 ARM64 (OpenCV 5 COOL + KleidiCV)
+opencv-python==4.12.0.88 ; platform_machine != "aarch64"
+numpy==2.2.3
+fastapi==0.115.11
+uvicorn==0.34.0
+pydantic==2.10.6
+pillow==11.1.0
+pydicom==3.0.1
+onnx==1.17.0
+torch==2.6.0
+torchvision==0.21.0
+httpx==0.28.1
