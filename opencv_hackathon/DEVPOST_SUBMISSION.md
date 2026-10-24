@@ -10,8 +10,9 @@ An autonomous OpenCV 5 (`dnn5` + AWS COOL) 3-plane Knee MRI agent (`0.957` RSNA 
 `opencv` · `aws` · `aws-graviton` · `python` · `onnx` · `pytorch` · `fastapi` · `html5` · `medical-imaging` · `agentic-ai`
 
 ## Live Web Endpoint & Repository Links
-- **Instant Live Web Cockpit (Zero-Install Browser Endpoint):** `https://raw.githack.com/switzloco/creaky/main/opencv_hackathon/dist/index.html`
-- **Interactive 3D Knee & UMAP Embedding Explorer ("Galaxy of Knees"):** `https://raw.githack.com/switzloco/creaky/main/galaxy_of_knees.html`
+- **Instant Live Web Cockpit (Zero-Install Browser Endpoint):** `https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html`
+- **Physician & Radiologist Clinical Brief:** `https://switzloco.github.io/creaky/physician_pitch.html`
+- **Interactive 3D Knee & UMAP Embedding Explorer ("Galaxy of Knees"):** `https://switzloco.github.io/creaky/galaxy_of_knees.html`
 - **GitHub Repository:** `https://github.com/switzloco/creaky`
 - **OpenCV 5 + AWS COOL Subdirectory:** `https://github.com/switzloco/creaky/tree/main/opencv_hackathon`
 - **Target Prize Tracks:** Overall Grand Prize + **Best Use of COOL Award** + **Agentic Vision Award**

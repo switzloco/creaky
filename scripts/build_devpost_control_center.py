@@ -40,24 +40,25 @@ def build_control_center() -> Path:
             "computer-vision",
         ],
         "try_it_out_urls": [
-            "https://raw.githack.com/switzloco/creaky/main/opencv_hackathon/dist/index.html",
-            "https://raw.githack.com/switzloco/creaky/main/physician_pitch.html",
-            "https://raw.githack.com/switzloco/creaky/main/galaxy_of_knees.html",
+            "https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html",
+            "https://switzloco.github.io/creaky/physician_pitch.html",
+            "https://switzloco.github.io/creaky/galaxy_of_knees.html",
         ],
         "github_url": "https://github.com/switzloco/creaky",
-        "physician_pitch_url": "https://raw.githack.com/switzloco/creaky/main/physician_pitch.html",
+        "physician_pitch_url": "https://switzloco.github.io/creaky/physician_pitch.html",
         "brother_message": (
             "Hey bro — we just built an AI + computer-vision second-opinion tool for 3-plane Knee MRIs (trained on 2,668 RSNA studies, 0.957 AUC). "
             "In our audit against a 3-radiologist consensus panel, busy single readers omitted 12–18% of secondary findings (like effusions/synovitis/subtle meniscal tears) due to satisfaction of search. "
             "It runs in ~116 ms inside a hospital VPC with zero PHI egress and shows an unmarked 1.65x tissue zoom + cortical bone edge map next to a matched normal knee reference.\n\n"
             "Here's the 2-minute interactive clinical brief & live PACS demo if you or any radiologist/ortho friends want to play with it:\n"
-            "https://raw.githack.com/switzloco/creaky/main/physician_pitch.html"
+            "https://switzloco.github.io/creaky/physician_pitch.html"
         ),
         "youtube_title": "Creaky-CV5 · Autonomous OpenCV 5 + AWS Graviton COOL Knee MRI Agent (OpenCV AI Competition 2026)",
         "youtube_description": (
             "Official submission for the OpenCV AI Competition 2026, powered by AWS (Overall + Best Use of COOL + Agentic Vision tracks).\n\n"
-            "• Live Interactive Web Cockpit: https://raw.githack.com/switzloco/creaky/main/opencv_hackathon/dist/index.html\n"
-            "• 3D Knee & UMAP Explorer: https://raw.githack.com/switzloco/creaky/main/galaxy_of_knees.html\n"
+            "• Live Interactive Web Cockpit: https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html\n"
+            "• Physician & Radiologist Clinical Brief: https://switzloco.github.io/creaky/physician_pitch.html\n"
+            "• 3D Knee & UMAP Explorer: https://switzloco.github.io/creaky/galaxy_of_knees.html\n"
             "• GitHub Repository: https://github.com/switzloco/creaky/tree/main/opencv_hackathon\n\n"
             "Highlights:\n"
             "- 0.957 Macro ROC-AUC on the RSNA Knee MRI Challenge Leaderboard (0.8568 on 3-Radiologist Gold Consensus Panel)\n"

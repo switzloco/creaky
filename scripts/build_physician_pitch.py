@@ -260,8 +260,8 @@ def build_physician_pitch() -> Path:
       </div>
     </div>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://raw.githack.com/switzloco/creaky/main/opencv_hackathon/dist/index.html" target="_blank">🔬 Launch Full Interactive PACS Cockpit ↗</a>
-      <a class="btn btn-secondary" href="https://raw.githack.com/switzloco/creaky/main/galaxy_of_knees.html" target="_blank">🌌 Explore 3D Knee &amp; 2,668-Study Embedding Map ↗</a>
+      <a class="btn btn-primary" href="https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html" target="_blank">🔬 Launch Full Interactive PACS Cockpit ↗</a>
+      <a class="btn btn-secondary" href="https://switzloco.github.io/creaky/galaxy_of_knees.html" target="_blank">🌌 Explore 3D Knee &amp; 2,668-Study Embedding Map ↗</a>
     </div>
   </header>
 
@@ -398,8 +398,8 @@ def build_physician_pitch() -> Path:
         </p>
       </div>
       <div class="cta-row">
-        <a class="btn btn-primary" href="https://raw.githack.com/switzloco/creaky/main/opencv_hackathon/dist/index.html" target="_blank">⚡ Open Full PACS Workstation ↗</a>
-        <a class="btn btn-secondary" href="https://raw.githack.com/switzloco/creaky/main/galaxy_of_knees.html" target="_blank">🌌 Open 3D Galaxy of Knees ↗</a>
+        <a class="btn btn-primary" href="https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html" target="_blank">⚡ Open Full PACS Workstation ↗</a>
+        <a class="btn btn-secondary" href="https://switzloco.github.io/creaky/galaxy_of_knees.html" target="_blank">🌌 Open 3D Galaxy of Knees ↗</a>
       </div>
     </section>
 
