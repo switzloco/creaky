@@ -10,9 +10,11 @@ An autonomous OpenCV 5 (`dnn5` + AWS COOL) 3-plane Knee MRI agent (`0.957` RSNA 
 `opencv` · `aws` · `aws-graviton` · `python` · `onnx` · `pytorch` · `fastapi` · `html5` · `medical-imaging` · `agentic-ai`
 
 ## Live Web Endpoint & Repository Links
-- **Instant Live Web Cockpit (Zero-Install Browser Endpoint):** `https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html`
-- **Physician & Radiologist Clinical Brief:** `https://switzloco.github.io/creaky/physician_pitch.html`
-- **Interactive 3D Knee & UMAP Embedding Explorer ("Galaxy of Knees"):** `https://switzloco.github.io/creaky/galaxy_of_knees.html`
+- **Live AWS Graviton ARM64 (`aarch64`) FastAPI + OpenCV 5 Server (`us-east-2`, Instance `i-0a4b3f6016589d223`):** `http://3.128.78.161:8055` *(Live JSON Telemetry: `http://3.128.78.161:8055/api/benchmark`)*
+- **Live AWS S3 Web Cockpit (`us-east-2.amazonaws.com`):** `http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com`
+- **Live AWS S3 Physician & Radiologist Clinical Brief:** `http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com/physician_pitch.html`
+- **Live AWS S3 3D Knee & UMAP Embedding Explorer ("Galaxy of Knees"):** `http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com/galaxy_of_knees.html`
+- **HTTPS Mirror (GitHub Pages):** `https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html`
 - **GitHub Repository:** `https://github.com/switzloco/creaky`
 - **OpenCV 5 + AWS COOL Subdirectory:** `https://github.com/switzloco/creaky/tree/main/opencv_hackathon`
 - **Target Prize Tracks:** Overall Grand Prize + **Best Use of COOL Award** + **Agentic Vision Award**
@@ -135,10 +137,27 @@ To qualify for the **Agentic Vision Award**, OpenCV 5 visual measurements must a
 - **Hybrid x86 / Arm Coexistence Architecture:**
   - `opencv_hackathon/cv5_engine.py` automatically detects the hardware architecture (`platform.machine()`) and SIMD dispatch flags (`cv2.getBuildInformation()`).
   - On **AWS Graviton ARM64 (`aarch64`)**, KleidiCV accelerates the heaviest per-slice inner loops—specifically `cv2.morphologyEx` (`MORPH_TOPHAT` / `MORPH_CLOSE`), `cv2.resize` (`INTER_AREA` / `INTER_LINEAR` / `INTER_LANCZOS4`), `cv2.bilateralFilter`, `cv2.createCLAHE`, and `cv2.Scharr` 16-bit signed convolution—while `cv2.dnn.readNetFromONNX` executes the 2.5D slab probe on Arm NEON/FP16 cores without requiring an expensive GPU instance.
-- **1-Command Reproducible Deployment (`opencv_hackathon/deploy_aws_cool.sh`):**
+- **1-Command Reproducible Deployment (`opencv_hackathon/deploy_aws_cool.sh` & `opencv_hackathon/cloudshell_oneclick.sh`):**
   ```bash
-  bash opencv_hackathon/deploy_aws_cool.sh
+  curl -sSL https://raw.githubusercontent.com/switzloco/creaky/main/opencv_hackathon/cloudshell_oneclick.sh | bash
   ```
+- **Live Deployed AWS Graviton ARM64 Verification (`us-east-2`, Account `777825729146`, Instance `i-0a4b3f6016589d223`):**
+  - Live FastAPI + OpenCV 5 Server: `http://3.128.78.161:8055`
+  - Live `/api/benchmark` Hardware Output from `i-0a4b3f6016589d223`:
+    ```json
+    {
+      "cv2_version": "5.0.0",
+      "platform": "Linux 6.18.56-125.164.amzn2023.aarch64 (aarch64)",
+      "is_aws_graviton_arm": true,
+      "cpu_hw_flags": "CPU/HW features: | Baseline: NEON FP16 | Dispatched code generation: NEON_DOTPROD NEON_FP16 NEON_BF16",
+      "dnn_status": "OpenCV cv2.dnn ONNX Runtime Active",
+      "num_slices_processed": 144,
+      "total_study_ms": 324.54,
+      "cool_graviton_study_ms": 324.54,
+      "slices_per_sec": 443.7
+    }
+    ```
+    *(Compared to `584.08 ms` on the AWS x86_64 baseline in the same `us-east-2` region — a verified **1.80× wall-clock speedup** on AWS Graviton ARM64 NEON/FP16).*
 
 ### Reproducible Benchmark: x86_64 Baseline vs. AWS Graviton COOL (144-Slice 3-Plane Study)
 You can reproduce this exact 6-stage benchmark on any machine via `uv run python -c "from opencv_hackathon.cv5_engine import run_opencv_cool_benchmark; import json; print(json.dumps(run_opencv_cool_benchmark(144), indent=2))"` or by clicking **`⚡ Re-Run Live 144-Slice Benchmark`** inside the Cockpit footer:

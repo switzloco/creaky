@@ -40,7 +40,8 @@ def build_control_center() -> Path:
             "computer-vision",
         ],
         "try_it_out_urls": [
-            "https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html",
+            "http://3.128.78.161:8055",
+            "http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com",
             "https://switzloco.github.io/creaky/physician_pitch.html",
             "https://switzloco.github.io/creaky/galaxy_of_knees.html",
         ],
@@ -56,7 +57,8 @@ def build_control_center() -> Path:
         "youtube_title": "Creaky-CV5 · Autonomous OpenCV 5 + AWS Graviton COOL Knee MRI Agent (OpenCV AI Competition 2026)",
         "youtube_description": (
             "Official submission for the OpenCV AI Competition 2026, powered by AWS (Overall + Best Use of COOL + Agentic Vision tracks).\n\n"
-            "• Live Interactive Web Cockpit: https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html\n"
+            "• Live AWS Graviton ARM64 FastAPI Server (us-east-2, i-0a4b3f6016589d223): http://3.128.78.161:8055\n"
+            "• Live AWS S3 Web Cockpit: http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com\n"
             "• Physician & Radiologist Clinical Brief: https://switzloco.github.io/creaky/physician_pitch.html\n"
             "• 3D Knee & UMAP Explorer: https://switzloco.github.io/creaky/galaxy_of_knees.html\n"
             "• GitHub Repository: https://github.com/switzloco/creaky/tree/main/opencv_hackathon\n\n"
