@@ -10,6 +10,7 @@ An autonomous OpenCV 5 (`dnn5` + AWS COOL) 3-plane Knee MRI agent (`0.957` RSNA 
 `opencv` · `aws` · `aws-graviton` · `python` · `onnx` · `pytorch` · `fastapi` · `html5` · `medical-imaging` · `agentic-ai`
 
 ## Live Web Endpoint & Repository Links
+- **Official Demo Video (YouTube):** `https://www.youtube.com/watch?v=CrrVAiFZXOg`
 - **Live AWS Graviton ARM64 (`aarch64`) FastAPI + OpenCV 5 Server (`us-east-2`, Instance `i-0a4b3f6016589d223`):** `http://3.128.78.161:8055` *(Live JSON Telemetry: `http://3.128.78.161:8055/api/benchmark`)*
 - **Live AWS S3 Web Cockpit (`us-east-2.amazonaws.com`):** `http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com`
 - **Live AWS S3 Physician & Radiologist Clinical Brief:** `http://creaky-cv5-opencv26-777825729146-us-east-2.s3-website.us-east-2.amazonaws.com/physician_pitch.html`

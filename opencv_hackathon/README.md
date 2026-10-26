@@ -2,6 +2,8 @@
 
 **THE CMO (Chief MRI Officer) · Autonomous 3-Plane Knee MRI Triage, OpenCV 5 Active-Zoom & Radiologist Second-Opinion Cockpit**
 
+- **Official Demo Video (YouTube):** [Watch 3-Min Demo Video](https://www.youtube.com/watch?v=CrrVAiFZXOg)
+- **Live AWS Graviton ARM64 Cockpit (`us-east-2`):** [Open AWS Graviton Server](http://3.128.78.161:8055)
 - **Live Zero-Install Browser Cockpit:** [Open Interactive Cockpit](https://switzloco.github.io/creaky/opencv_hackathon/dist/index.html)
 - **Live Physician & Radiologist Clinical Brief:** [Open Clinical Brief](https://switzloco.github.io/creaky/physician_pitch.html)
 - **Live 3D Knee & UMAP Embedding Explorer ("Galaxy of Knees"):** [Open Galaxy of Knees](https://switzloco.github.io/creaky/galaxy_of_knees.html)

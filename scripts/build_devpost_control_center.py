@@ -46,6 +46,7 @@ def build_control_center() -> Path:
             "https://switzloco.github.io/creaky/galaxy_of_knees.html",
         ],
         "github_url": "https://github.com/switzloco/creaky",
+        "video_url": "https://www.youtube.com/watch?v=CrrVAiFZXOg",
         "physician_pitch_url": "https://switzloco.github.io/creaky/physician_pitch.html",
         "brother_message": (
             "Hey bro — we just built an AI + computer-vision second-opinion tool for 3-plane Knee MRIs (trained on 2,668 RSNA studies, 0.957 AUC). "
@@ -70,106 +71,116 @@ def build_control_center() -> Path:
         ),
     }
 
-    # Create the Devpost DOM Auto-Fill Script
+    # Create the Devpost DOM Auto-Fill + Floating In-Page Injector Script
     autofill_js = f"""(function() {{
   const DATA = {json.dumps(submission_data)};
 
   function setNativeValue(el, val) {{
     if (!el) return false;
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-    if (setter) {{
-      setter.call(el, val);
-    }} else {{
+    try {{
+      if (el.CodeMirror) {{
+        el.CodeMirror.setValue(val);
+        el.CodeMirror.save();
+        return true;
+      }}
+      if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {{
+        el.focus();
+        el.innerText = val;
+        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        return true;
+      }}
+      const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) {{
+        setter.call(el, val);
+      }} else {{
+        el.value = val;
+      }}
+      el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+      el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+      return true;
+    }} catch (e) {{
       el.value = val;
+      return true;
     }}
-    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-    return true;
+  }}
+
+  function isVisible(el) {{
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 10 && r.height > 10 && window.getComputedStyle(el).visibility !== 'hidden';
+  }}
+
+  function getContextText(el) {{
+    let txt = (el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '');
+    if (el.labels && el.labels.length) {{
+      for (const l of el.labels) txt += ' ' + l.innerText;
+    }}
+    let p = el.parentElement;
+    for (let i = 0; i < 4 && p; i++) {{
+      const lbl = p.querySelector('label, h3, h4, legend, .field-label, .form-label, strong');
+      if (lbl) txt += ' ' + lbl.innerText;
+      p = p.parentElement;
+    }}
+    return txt.toLowerCase();
   }}
 
   let filledCount = 0;
+  let tryUrlIdx = 0;
 
-  // 1. Project Name / Title
-  const titleSelectors = [
-    '#software_name',
-    'input[name="software[name]"]',
-    'input[name*="title" i]',
-    'input[placeholder*="project name" i]',
-    'input[id*="name" i]'
-  ];
-  for (const sel of titleSelectors) {{
-    const el = document.querySelector(sel);
-    if (el && el.type !== 'hidden') {{
+  // Scan all visible inputs, textareas, CodeMirror, and contenteditable elements
+  const allFields = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]), textarea, .CodeMirror, [contenteditable="true"]')).filter(isVisible);
+
+  allFields.forEach((el) => {{
+    const ctx = getContextText(el);
+    const isBig = el.tagName === 'TEXTAREA' && (el.rows > 3 || el.getBoundingClientRect().height > 90) || el.classList.contains('CodeMirror') || el.isContentEditable;
+
+    if (ctx.includes('video') || ctx.includes('youtube') || ctx.includes('vimeo') || ctx.includes('footage')) {{
+      if (setNativeValue(el, DATA.video_url)) filledCount++;
+      return;
+    }}
+    if (ctx.includes('project name') || ctx.includes('project called') || ctx.includes('software[name]') || ctx.includes('submission[name]') || (ctx.includes('title') && !ctx.includes('job'))) {{
       const maxLen = el.maxLength && el.maxLength > 0 ? el.maxLength : 200;
-      setNativeValue(el, maxLen < 80 ? DATA.short_title : DATA.title.slice(0, maxLen));
-      filledCount++;
-      break;
-    }}
-  }}
-
-  // 2. Elevator Pitch / Tagline
-  const pitchSelectors = [
-    '#software_tagline',
-    'input[name="software[tagline]"]',
-    'textarea[name="software[tagline]"]',
-    'input[name*="pitch" i]',
-    'textarea[name*="pitch" i]',
-    'input[placeholder*="elevator pitch" i]',
-    'input[placeholder*="short" i]'
-  ];
-  for (const sel of pitchSelectors) {{
-    const el = document.querySelector(sel);
-    if (el) {{
-      setNativeValue(el, DATA.elevator_pitch);
-      filledCount++;
-      break;
-    }}
-  }}
-
-  // 3. Project Story / Description (Markdown)
-  const descSelectors = [
-    '#software_description',
-    'textarea[name="software[description]"]',
-    'textarea[id*="description" i]',
-    'textarea.markdown-editor',
-    '.CodeMirror'
-  ];
-  for (const sel of descSelectors) {{
-    const el = document.querySelector(sel);
-    if (el) {{
-      if (el.CodeMirror) {{
-        el.CodeMirror.setValue(DATA.story_markdown);
-      }} else {{
-        setNativeValue(el, DATA.story_markdown);
-      }}
-      filledCount++;
-      break;
-    }}
-  }}
-
-  // 4. Try It Out URLs & GitHub Repo URL
-  const urlInputs = Array.from(document.querySelectorAll('input[type="url"], input[name*="url" i], input[placeholder*="http" i], input[name*="website" i], input[name*="github" i]'));
-  let tryIdx = 0;
-  urlInputs.forEach((inp) => {{
-    const nm = (inp.name + ' ' + inp.id + ' ' + inp.placeholder).toLowerCase();
-    if (nm.includes('video') || nm.includes('youtube')) {{
-      // Leave video URL for user's YouTube link unless empty
-    }} else if (nm.includes('github') || nm.includes('repo') || nm.includes('source')) {{
-      setNativeValue(inp, DATA.github_url);
-      filledCount++;
-    }} else if (tryIdx < DATA.try_it_out_urls.length) {{
-      setNativeValue(inp, DATA.try_it_out_urls[tryIdx++]);
-      filledCount++;
+      if (setNativeValue(el, maxLen < 80 ? DATA.short_title : DATA.title.slice(0, maxLen))) filledCount++;
+    }} else if (ctx.includes('elevator pitch') || ctx.includes('tagline') || ctx.includes('short, sharp') || ctx.includes('memorable pitch') || ctx.includes('one-line')) {{
+      if (setNativeValue(el, DATA.elevator_pitch)) filledCount++;
+    }} else if (isBig || ctx.includes('about the project') || ctx.includes('inspired you') || ctx.includes('what it does') || ctx.includes('how you built') || ctx.includes('description') || ctx.includes('technical report')) {{
+      if (setNativeValue(el, DATA.story_markdown)) filledCount++;
+    }} else if (ctx.includes('github') || ctx.includes('repository') || ctx.includes('source code')) {{
+      if (setNativeValue(el, DATA.github_url)) filledCount++;
+    }} else if (ctx.includes('try it out') || ctx.includes('url') || ctx.includes('website') || ctx.includes('demo link') || ctx.includes('endpoint') || el.type === 'url') {{
+      const u = DATA.try_it_out_urls[tryUrlIdx % DATA.try_it_out_urls.length];
+      tryUrlIdx++;
+      if (setNativeValue(el, u)) filledCount++;
+    }} else if (ctx.includes('built with') || ctx.includes('languages, frameworks')) {{
+      if (setNativeValue(el, DATA.built_with.join(', '))) filledCount++;
     }}
   }});
 
-  // 5. Opt-in Checkboxes (Best Use of COOL, Agentic Vision, Rules)
-  const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+  // Fallback: if 0 fields matched by label, fill visible text inputs / large textareas by position
+  if (filledCount === 0 && allFields.length > 0) {{
+    const textInputs = allFields.filter(e => e.tagName === 'INPUT');
+    const bigBoxes = allFields.filter(e => e.tagName === 'TEXTAREA' || e.classList.contains('CodeMirror') || e.isContentEditable);
+    if (textInputs.length >= 1 && !textInputs[0].value) {{
+      setNativeValue(textInputs[0], DATA.title);
+      filledCount++;
+    }}
+    if (textInputs.length >= 2 && !textInputs[1].value) {{
+      setNativeValue(textInputs[1], DATA.elevator_pitch);
+      filledCount++;
+    }}
+    if (bigBoxes.length >= 1) {{
+      setNativeValue(bigBoxes[0], DATA.story_markdown);
+      filledCount++;
+    }}
+  }}
+
+  // Checkboxes (Best Use of COOL, Agentic Vision, Rules)
+  const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(isVisible);
   checkboxes.forEach((cb) => {{
     const lbl = (cb.closest('label')?.innerText || cb.parentElement?.innerText || '').toLowerCase();
-    if (lbl.includes('cool') || lbl.includes('agentic') || lbl.includes('rule') || lbl.includes('eligible') || lbl.includes('terms') || lbl.includes('overall')) {{
+    if (lbl.includes('cool') || lbl.includes('agentic') || lbl.includes('rule') || lbl.includes('eligible') || lbl.includes('terms') || lbl.includes('overall') || lbl.includes('agree')) {{
       if (!cb.checked) {{
         cb.click();
         cb.checked = true;
@@ -179,13 +190,60 @@ def build_control_center() -> Path:
     }}
   }});
 
-  // Show confirmation banner inside Devpost
-  const banner = document.createElement('div');
-  banner.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#065f46;color:#fff;padding:16px 22px;border-radius:12px;border:2px solid #10b981;font-family:sans-serif;box-shadow:0 15px 35px rgba(0,0,0,0.4);max-width:420px;';
-  banner.innerHTML = '<div style="font-weight:900;font-size:15px;margin-bottom:4px;">⚡ Creaky-CV5 Devpost Auto-Filler Executed!</div>' +
-    '<div style="font-size:13px;color:#d1fae5;">Auto-populated <strong>' + filledCount + '</strong> fields on this step. Click Save & Continue to move to the next Devpost tab and click the bookmarklet again!</div>';
-  document.body.appendChild(banner);
-  setTimeout(() => banner.remove(), 7000);
+  // Track last focused input on the page so user can 1-click inject into ANY box
+  window.__CREAKY_LAST_FOCUSED__ = allFields[0] || null;
+  document.addEventListener('focusin', (e) => {{
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {{
+      window.__CREAKY_LAST_FOCUSED__ = e.target;
+    }}
+  }});
+
+  // Mount persistent floating 1-Click Field Injector sidebar right inside Devpost
+  const oldPanel = document.getElementById('creaky-devpost-dock');
+  if (oldPanel) oldPanel.remove();
+
+  const dock = document.createElement('div');
+  dock.id = 'creaky-devpost-dock';
+  dock.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:2147483647;background:#0f172a;color:#f8fafc;padding:16px;border-radius:14px;border:2px solid #10b981;font-family:-apple-system,sans-serif;box-shadow:0 20px 45px rgba(0,0,0,0.65);width:330px;font-size:12.5px;';
+  dock.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #334155;">
+      <strong style="color:#10b981;font-size:13.5px;">⚡ Creaky-CV5 Devpost Injector</strong>
+      <span style="background:#065f46;color:#a7f3d0;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:800;">Auto-filled: ${{filledCount}}</span>
+    </div>
+    <div style="color:#94a3b8;font-size:11.5px;margin-bottom:10px;">
+      Click inside any Devpost box on screen, then click a button below to inject &amp; copy:
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <button data-k="title" style="background:#10b981;color:#022c22;border:none;padding:7px 10px;border-radius:8px;font-weight:800;cursor:pointer;text-align:left;">1. Inject + Copy Project Name</button>
+      <button data-k="elevator_pitch" style="background:#10b981;color:#022c22;border:none;padding:7px 10px;border-radius:8px;font-weight:800;cursor:pointer;text-align:left;">2. Inject + Copy Elevator Pitch (198 chars)</button>
+      <button data-k="story_markdown" style="background:#38bdf8;color:#082f49;border:none;padding:7px 10px;border-radius:8px;font-weight:800;cursor:pointer;text-align:left;">3. Inject + Copy Full Markdown Story</button>
+      <button data-k="tags" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;text-align:left;">4. Copy Built-With Tags (opencv, aws...)</button>
+      <button data-k="video_url" style="background:#f59e0b;color:#451a03;border:none;padding:7px 10px;border-radius:8px;font-weight:900;cursor:pointer;text-align:left;">🎬 Inject YouTube URL (watch?v=CrrVAiFZXOg)</button>
+      <button data-k="aws_ec2" style="background:#1e293b;color:#34d399;border:1px solid #10b981;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;text-align:left;">5. Inject AWS Graviton URL (http://3.128.78.161:8055)</button>
+      <button data-k="aws_s3" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;text-align:left;">6. Inject AWS S3 URL (*.amazonaws.com)</button>
+      <button data-k="github_url" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;text-align:left;">7. Inject GitHub Repo URL</button>
+    </div>
+  `;
+  document.body.appendChild(dock);
+
+  dock.querySelectorAll('button[data-k]').forEach(btn => {{
+    btn.addEventListener('click', () => {{
+      const k = btn.getAttribute('data-k');
+      let val = '';
+      if (k === 'tags') val = DATA.built_with.join(', ');
+      else if (k === 'aws_ec2') val = DATA.try_it_out_urls[0];
+      else if (k === 'aws_s3') val = DATA.try_it_out_urls[1];
+      else val = DATA[k] || '';
+
+      navigator.clipboard.writeText(val);
+      if (window.__CREAKY_LAST_FOCUSED__) {{
+        setNativeValue(window.__CREAKY_LAST_FOCUSED__, val);
+      }}
+      const oldTxt = btn.innerText;
+      btn.innerText = '✅ Injected & Copied to Clipboard!';
+      setTimeout(() => btn.innerText = oldTxt, 1800);
+    }});
+  }});
 }})();"""
 
     autofill_path = KIT_DIR / "devpost_autofill.js"
